@@ -10,15 +10,15 @@ Prerequisites
 
 Run time:
 
- * JRE 1.7+
- * HDFS cluster
- * Spark cluster
+* JRE 1.7+
+* HDFS cluster
+* Spark cluster
 
 Build time:
 
- * JDK 1.7+
- * Scala SDK 2.10
- * Maven
+* JDK 1.7+
+* Scala SDK 2.10
+* Maven
 
 Scala 2.11 and Java 1.8 may work, too. We simply haven't tested those, yet.
 
@@ -41,15 +41,15 @@ Build
 Caveats
 =======
 
- * Alpha-quality
- * Uses Spark, not Yarn/MapReduce
- * Lack of unit tests
- * Hard-coded task and block size of 64MB
- * Destination must be a full ``hdfs://`` URL, ignores the ``fs.default.name``
-   property
- * On failure, temporary files may be left around
- * S3 credentials may be set via Java properties or environment variables as
-   described in the `AWS API documentation`_ but are not read from
-   ``core-site.xml``
+* Alpha-quality
+* Uses Spark, not Yarn/MapReduce
+* Lack of unit tests
+* Hard-coded task and block size of 64MB
+* Destination must be a full ``hdfs://`` URL, ignores the ``fs.default.name``
+  property
+* On failure, temporary files may be left around
+* S3 credentials may be set via Java properties or environment variables as
+  described in the `AWS API documentation`_ but are not read from
+  ``core-site.xml``
 
 .. _`AWS API documentation`: http://docs.aws.amazon.com/AWSJavaSDK/latest/javadoc/com/amazonaws/auth/DefaultAWSCredentialsProviderChain.html
