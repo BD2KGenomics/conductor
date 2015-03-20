@@ -5,6 +5,10 @@ the download of a single large file over multiple nodes. Amazon's s3distcp is
 intended to fill that gap but, to our best knowledge, hasn't not been
 released as open source.
 
+A cluster of 10 r3.xlarge nodes downloaded a 288GB file in 377s to an HDFS
+with replication factor 1. That's 783 MB/s. distcp typically gives you 50MB/s
+to 80MB/s on that instance type.
+
 Prerequisites
 =============
 
