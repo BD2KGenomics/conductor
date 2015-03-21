@@ -64,7 +64,7 @@ class SparkS3Downloader(credentials: (String, String), partitionSize: Int, src: 
       partitions += ((i * partitionSize, partitionSize))
     }
     if (remainder > 0) {
-      partitions += ((partitionSize - remainder, remainder))
+      partitions += ((size - remainder, remainder))
     }
     partitions
   }
