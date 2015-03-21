@@ -102,9 +102,9 @@ class SparkS3Downloader(credentials: (String, String), partitionSize: Int, src: 
     val parts = dfs.listStatus(splitDstPath, new PathFilter {
       override def accept(path: Path): Boolean = path.getName.startsWith("part-")
     }).map(_.getPath).sortBy(_.getName)
-    val (Array(firstPart), otherParts) = parts.splitAt(1)
+    val Array(firstPart, otherParts @ _*) = parts
     if (otherParts.size > 0) {
-      dfs.concat(firstPart, otherParts)
+      dfs.concat(firstPart, otherParts.toArray)
     }
     dfs.rename(firstPart, dstPath)
     dfs.delete(splitDstPath, true)
