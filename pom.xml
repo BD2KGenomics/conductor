@@ -71,6 +71,7 @@
                                     <mainClass>edu.ucsc.bd2k.SparkS3Downloader</mainClass>
                                 </transformer>
                             </transformers>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
                         </configuration>
                     </execution>
                 </executions>
