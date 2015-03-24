@@ -7,7 +7,8 @@ released as open source.
 
 A cluster of 10 r3.xlarge nodes downloaded a 288GB file in 377s to an HDFS
 with replication factor 1. That's 783 MB/s. distcp typically gives you 50MB/s
-to 80MB/s on that instance type.
+to 80MB/s on that instance type. A cluster of 100 r3.xlarge nodes downloaded
+that same file in 80s.
 
 Prerequisites
 =============
@@ -49,8 +50,8 @@ Caveats
 * Uses Spark, not Yarn/MapReduce
 * Lack of unit tests
 * Hard-coded task and block size of 64MB
-* Destination must be a full ``hdfs://`` URL, ignores the ``fs.default.name``
-  property
+* Destination must be a full ``hdfs://`` URL, the ``fs.default.name``
+  property is ignored
 * On failure, temporary files may be left around
 * S3 credentials may be set via Java properties or environment variables as
   described in the `AWS API documentation`_ but are not read from
