@@ -15,9 +15,9 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
-            <groupId>com.github.seratch</groupId>
-            <artifactId>awscala_2.10</artifactId>
-            <version>0.5.0</version>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk-s3</artifactId>
+            <version>1.9.25</version>
         </dependency>
         <dependency>
             <groupId>com.github.scala-incubator.io</groupId>

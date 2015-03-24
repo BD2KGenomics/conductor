@@ -1,11 +1,9 @@
 package edu.ucsc.bd2k
 
-import java.io.Serializable
 import java.net.URI
 
-import awscala.s3.S3
-import awscala.{Credentials, Region}
-import com.amazonaws.auth.DefaultAWSCredentialsProviderChain
+import com.amazonaws.auth.{BasicAWSCredentials, AWSCredentials, DefaultAWSCredentialsProviderChain}
+import com.amazonaws.services.s3.AmazonS3Client
 import com.amazonaws.services.s3.model.GetObjectRequest
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.fs.{FSDataOutputStream, FileSystem, Path, PathFilter}
@@ -29,13 +27,13 @@ object SparkS3Downloader {
     val dst = new URI(args(1))
     assert(dst.getScheme == "hdfs")
     val credentialsProvider = new DefaultAWSCredentialsProviderChain()
-    val awsCredentials = credentialsProvider.getCredentials
-    // FIXME: Use class instead of tuple for creds, but must be serializable
-    new SparkS3Downloader((awsCredentials.getAWSAccessKeyId, awsCredentials.getAWSSecretKey), partitionSize, src, dst).run()
+    val credentials = new Credentials(credentialsProvider.getCredentials)
+    new SparkS3Downloader(credentials, partitionSize, src, dst).run()
   }
 }
 
-class SparkS3Downloader(credentials: (String, String), partitionSize: Int, src: URI, dst: URI) extends Serializable {
+
+class SparkS3Downloader(credentials: Credentials, partitionSize: Int, src: URI, dst: URI) extends Serializable {
 
   val srcBucket = src.getHost
   val srcPath = src.getPath
@@ -44,8 +42,7 @@ class SparkS3Downloader(credentials: (String, String), partitionSize: Int, src: 
   val splitDst = new URI(dst.toString + ".parts")
 
   def run() {
-    implicit val region = Region.default()
-    val s3 = S3(Credentials(credentials._1, credentials._2))
+    val s3 = new AmazonS3Client(credentials.toAwsCredentials)
     val size: Long = s3.getObjectMetadata(srcBucket, srcKey).getContentLength
     val partitions: ArrayBuffer[(Long, Int)] = partition(size)
     val conf = new SparkConf().setAppName("SparkS3Downloader")
@@ -70,10 +67,9 @@ class SparkS3Downloader(credentials: (String, String), partitionSize: Int, src: 
   }
 
   def download(start: Long, size: Int): Array[Byte] = {
-    implicit val region = Region.default()
     assert(size > 0)
     assert(size <= partitionSize)
-    val s3 = S3(Credentials(credentials._1, credentials._2))
+    val s3 = new AmazonS3Client(credentials.toAwsCredentials)
     val req = new GetObjectRequest(srcBucket, srcKey)
     req.setRange(start, start + size - 1)
     val in = s3.getObject(req).getObjectContent
@@ -141,5 +137,20 @@ class BinaryOutputFormat[K] extends FileOutputFormat[K, Array[Byte]] {
         fileOut.close()
       }
     }
+  }
+}
+
+@SerialVersionUID(0L)
+class Credentials(val accessKeyId: String, val secretKey: String) extends Serializable {
+  def this(awsCredentials: AWSCredentials) {
+    this(awsCredentials.getAWSAccessKeyId, awsCredentials.getAWSSecretKey)
+  }
+
+  def this() {
+    this(new DefaultAWSCredentialsProviderChain().getCredentials)
+  }
+
+  def toAwsCredentials: AWSCredentials = {
+    new BasicAWSCredentials(accessKeyId, secretKey)
   }
 }
