@@ -26,8 +26,7 @@ object SparkS3Downloader {
     assert(src.getScheme == "s3")
     val dst = new URI(args(1))
     assert(dst.getScheme == "hdfs")
-    val credentialsProvider = new DefaultAWSCredentialsProviderChain()
-    val credentials = new Credentials(credentialsProvider.getCredentials)
+    val credentials = new Credentials()
     new SparkS3Downloader(credentials, partitionSize, src, dst).run()
   }
 }
@@ -107,6 +106,7 @@ class SparkS3Downloader(credentials: Credentials, partitionSize: Int, src: URI, 
   }
 }
 
+
 class BinaryOutputFormat[K] extends FileOutputFormat[K, Array[Byte]] {
   override def getRecordWriter(ignored: FileSystem,
                                job: JobConf,
@@ -139,6 +139,7 @@ class BinaryOutputFormat[K] extends FileOutputFormat[K, Array[Byte]] {
     }
   }
 }
+
 
 @SerialVersionUID(0L)
 class Credentials(val accessKeyId: String, val secretKey: String) extends Serializable {
