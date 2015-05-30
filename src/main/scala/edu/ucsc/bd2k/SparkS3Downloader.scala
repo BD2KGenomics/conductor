@@ -2,7 +2,9 @@ package edu.ucsc.bd2k
 
 import java.net.URI
 
-import com.amazonaws.auth.{BasicAWSCredentials, AWSCredentials, DefaultAWSCredentialsProviderChain}
+import com.amazonaws.AmazonClientException
+import com.amazonaws.auth._
+import com.amazonaws.auth.profile.ProfileCredentialsProvider
 import com.amazonaws.services.s3.AmazonS3Client
 import com.amazonaws.services.s3.model.GetObjectRequest
 import org.apache.commons.io.IOUtils
@@ -26,7 +28,7 @@ object SparkS3Downloader {
     assert(src.getScheme == "s3")
     val dst = new URI(args(1))
     assert(dst.getScheme == "hdfs")
-    val credentials = new Credentials()
+    val credentials = Credentials()
     new SparkS3Downloader(credentials, partitionSize, src, dst).run()
   }
 }
@@ -141,17 +143,60 @@ class BinaryOutputFormat[K] extends FileOutputFormat[K, Array[Byte]] {
 }
 
 
+abstract class Credentials {
+  def toAwsCredentials: AWSCredentials
+}
+
+
+object Credentials {
+  def apply() = {
+    // If we can get configured credentials on the driver, use those on every
+    // worker node. Otherwise fall back to instance profile credentials which
+    // will be read from instance metadata on each node. Note that even if the
+    // driver node has access to instance profile credentials, we wouldn't be
+    // able to use them on worker nodes.
+    try {
+      new ExplicitCredentials(new ConfiguredCredentials().toAwsCredentials)
+    } catch {
+      case _: AmazonClientException => new ImplicitCredentials
+    }
+  }
+}
+
+
 @SerialVersionUID(0L)
-class Credentials(val accessKeyId: String, val secretKey: String) extends Serializable {
+case class ExplicitCredentials(accessKeyId: String, secretKey: String)
+  extends Credentials with Serializable {
+
   def this(awsCredentials: AWSCredentials) {
     this(awsCredentials.getAWSAccessKeyId, awsCredentials.getAWSSecretKey)
   }
 
-  def this() {
-    this(new DefaultAWSCredentialsProviderChain().getCredentials)
-  }
-
   def toAwsCredentials: AWSCredentials = {
     new BasicAWSCredentials(accessKeyId, secretKey)
+  }
+}
+
+
+@SerialVersionUID(0L)
+case class ConfiguredCredentials()
+  extends Credentials with Serializable {
+
+  def toAwsCredentials: AWSCredentials = {
+    new AWSCredentialsProviderChain(
+      new EnvironmentVariableCredentialsProvider,
+      new SystemPropertiesCredentialsProvider,
+      new ProfileCredentialsProvider
+    ).getCredentials
+  }
+}
+
+
+@SerialVersionUID(0L)
+case class ImplicitCredentials()
+  extends Credentials with Serializable {
+
+  def toAwsCredentials: AWSCredentials = {
+    new DefaultAWSCredentialsProviderChain().getCredentials
   }
 }
