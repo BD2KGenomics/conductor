@@ -34,7 +34,7 @@ Usage
 
     export AWS_ACCESS_KEY=...
     export AWS_SECRET_KEY=...
-    spark-submit spark-s3-downloader-VERSION.jar s3://BUCKET/KEY hdfs://HOST[:PORT]/path
+    spark-submit spark-s3-downloader-VERSION.jar s3://BUCKET/KEY hdfs://HOST[:PORT]/PATH
 
 Build
 =====
