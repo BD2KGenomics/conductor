@@ -21,26 +21,45 @@ import scala.collection.mutable.ArrayBuffer
 
 object SparkS3Downloader {
 
-  val partitionSize = 64 * 1024 * 1024 // TODO: make configurable
-
-  def main(args: Array[String]) {
-    val src = new URI(args(0))
-    assert(src.getScheme == "s3")
-    val dst = new URI(args(1))
-    assert(dst.getScheme == "hdfs")
+  def main(args: Array[String]) {   
+    
     val credentials = Credentials()
-    new SparkS3Downloader(credentials, partitionSize, src, dst).run()
+    val parser = new scopt.OptionParser[Config]("scopt") {
+      opt[Int]("s3-part-size") action { (x, c) =>
+        c.copy(s3PartSize = x)} text("s3-part-size indicates the size of each partition implicitly in MB; default: 64 MB")
+      opt[Int]("hdfs-block-size") action { (x, c) => 
+        c.copy(hdfsBlockSize = x)} text("hdfs-block-size indicates the size of each block implicitly in MB; must divide s3-part-size evenly; default: 64 MB")
+      arg[String]("src-path") action { (x, c) =>
+        c.copy(srcLocation = x) } text("location of src file")
+      arg[String]("dst-path") action { (x, c) =>
+        c.copy(dstLocation = x) } text("location of dst file")
+    }
+    parser.parse(args, Config()) match {
+      case Some(config) =>
+        val partitionSize = config.s3PartSize * 1024 * 1024
+        val blockSize = config.hdfsBlockSize * 1024 * 1024
+        assert(partitionSize % blockSize == 0, "Partition size must be a multiple of block size.")
+        val src = new URI(config.srcLocation)
+        assert(src.getScheme == "s3", "The source file must be in S3.")
+        val dst = new URI(config.dstLocation)
+        assert(dst.getScheme == "hdfs", "The destination location must be in HDFS (Hadoop Distributed File System).")
+        new SparkS3Downloader(credentials, partitionSize, blockSize, src, dst).run()
+      case None =>
+        // arguments are bad, error message will have been displayed
+    }
   }
 }
 
+case class Config(s3PartSize: Int = 64, hdfsBlockSize: Int = 64, srcLocation: String = "", dstLocation: String = "")
 
-class SparkS3Downloader(credentials: Credentials, partitionSize: Int, src: URI, dst: URI) extends Serializable {
+class SparkS3Downloader(credentials: Credentials, partitionSize: Int, blockSize: Int, src: URI, dst: URI) extends Serializable {
 
   val srcBucket = src.getHost
   val srcPath = src.getPath
-  assert(srcPath(0) == '/')
+  assert(srcPath(0) == '/', "The path to the source file must be valid and start with '/'.")
   val srcKey = srcPath.substring(1)
   val splitDst = new URI(dst.toString + ".parts")
+  val BlockSizeConf = "sparkS3Downloader.blockSize"
 
   def run() {
     val s3 = new AmazonS3Client(credentials.toAwsCredentials)
@@ -48,6 +67,7 @@ class SparkS3Downloader(credentials: Credentials, partitionSize: Int, src: URI, 
     val partitions: ArrayBuffer[(Long, Int)] = partition(size)
     val conf = new SparkConf().setAppName("SparkS3Downloader")
     val sc = new SparkContext(conf)
+    sc.hadoopConfiguration.setInt(BlockSizeConf, blockSize)
     sc.parallelize(partitions, partitions.size)
       .map(partition => (partition, download(partition._1, partition._2)))
       .saveAsHadoopFile(splitDst.toString, classOf[Object], classOf[Array[Byte]], classOf[BinaryOutputFormat[Object]])
@@ -68,8 +88,8 @@ class SparkS3Downloader(credentials: Credentials, partitionSize: Int, src: URI, 
   }
 
   def download(start: Long, size: Int): Array[Byte] = {
-    assert(size > 0)
-    assert(size <= partitionSize)
+    assert(size > 0, "Partitions cannot be empty.")
+    assert(size <= partitionSize, "No partition can exceed the specified part size.")
     val s3 = new AmazonS3Client(credentials.toAwsCredentials)
     val req = new GetObjectRequest(srcBucket, srcKey)
     req.setRange(start, start + size - 1)
@@ -110,6 +130,9 @@ class SparkS3Downloader(credentials: Credentials, partitionSize: Int, src: URI, 
 
 
 class BinaryOutputFormat[K] extends FileOutputFormat[K, Array[Byte]] {
+
+  val BlockSizeConf = "sparkS3Downloader.blockSize"
+
   override def getRecordWriter(ignored: FileSystem,
                                job: JobConf,
                                name: String,
@@ -128,7 +151,7 @@ class BinaryOutputFormat[K] extends FileOutputFormat[K, Array[Byte]] {
       true,
       fs.getConf.getInt("io.file.buffer.size", 4096),
       fs.getDefaultReplication(file),
-      SparkS3Downloader.partitionSize,
+      job.getInt(BlockSizeConf, 0),
       progress)
     new mapred.RecordWriter[K, Array[Byte]] {
       override def write(key: K, value: Array[Byte]): Unit = {
