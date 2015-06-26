@@ -5,7 +5,7 @@
     <artifactId>spark-s3-downloader</artifactId>
     <name>Spark S3 Downloader</name>
     <packaging>jar</packaging>
-    <version>0.2-SNAPSHOT</version>
+    <version>0.3-SNAPSHOT</version>
 
     <dependencies>
         <dependency>
@@ -33,6 +33,11 @@
             <groupId>com.github.scopt</groupId>
             <artifactId>scopt_2.10</artifactId>
             <version>3.3.0</version>
+        </dependency>
+        <dependency>
+            <groupId>log4j</groupId>
+            <artifactId>log4j</artifactId>
+            <version>1.2.17</version>
         </dependency>
     </dependencies>
 
