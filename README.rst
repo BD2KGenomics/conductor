@@ -34,7 +34,7 @@ Usage
 
     export AWS_ACCESS_KEY=...
     export AWS_SECRET_KEY=...
-    spark-submit spark-s3-downloader-VERSION.jar s3://BUCKET/KEY hdfs://HOST[:PORT]/path
+    spark-submit spark-s3-downloader-VERSION.jar s3://BUCKET/KEY hdfs://HOST[:PORT]/path [--s3-part-size <value>] [--hdfs-block-size <value>]
 
 Build
 =====
@@ -49,7 +49,6 @@ Caveats
 * Alpha-quality
 * Uses Spark, not Yarn/MapReduce
 * Lack of unit tests
-* Hard-coded task and block size of 64MB
 * Destination must be a full ``hdfs://`` URL, the ``fs.default.name``
   property is ignored
 * On failure, temporary files may be left around

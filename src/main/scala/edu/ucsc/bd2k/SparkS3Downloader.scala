@@ -26,9 +26,9 @@ object SparkS3Downloader {
     val credentials = Credentials()
     val parser = new scopt.OptionParser[Config]("scopt") {
       opt[Int]("s3-part-size") action { (x, c) =>
-        c.copy(s3PartSize = x)} text("s3-part-size indicates the size of each partition implicitly in MB; default: 64 MB")
+        c.copy(s3PartSize = x)} text("s3-part-size indicates the size of each partition in MB; default: 64")
       opt[Int]("hdfs-block-size") action { (x, c) => 
-        c.copy(hdfsBlockSize = x)} text("hdfs-block-size indicates the size of each block implicitly in MB; must divide s3-part-size evenly; default: 64 MB")
+        c.copy(hdfsBlockSize = x)} text("hdfs-block-size indicates the size of each block in MB; must divide s3-part-size evenly; default: 64")
       arg[String]("src-path") action { (x, c) =>
         c.copy(srcLocation = x) } text("location of src file")
       arg[String]("dst-path") action { (x, c) =>
@@ -59,7 +59,7 @@ class SparkS3Downloader(credentials: Credentials, partitionSize: Int, blockSize:
   assert(srcPath(0) == '/', "The path to the source file must be valid and start with '/'.")
   val srcKey = srcPath.substring(1)
   val splitDst = new URI(dst.toString + ".parts")
-  val BlockSizeConf = "sparkS3Downloader.blockSize"
+  val blockSizeConf = "sparkS3Downloader.blockSize"
 
   def run() {
     val s3 = new AmazonS3Client(credentials.toAwsCredentials)
@@ -67,7 +67,7 @@ class SparkS3Downloader(credentials: Credentials, partitionSize: Int, blockSize:
     val partitions: ArrayBuffer[(Long, Int)] = partition(size)
     val conf = new SparkConf().setAppName("SparkS3Downloader")
     val sc = new SparkContext(conf)
-    sc.hadoopConfiguration.setInt(BlockSizeConf, blockSize)
+    sc.hadoopConfiguration.setInt(blockSizeConf, blockSize)
     sc.parallelize(partitions, partitions.size)
       .map(partition => (partition, download(partition._1, partition._2)))
       .saveAsHadoopFile(splitDst.toString, classOf[Object], classOf[Array[Byte]], classOf[BinaryOutputFormat[Object]])
@@ -120,7 +120,7 @@ class SparkS3Downloader(credentials: Credentials, partitionSize: Int, blockSize:
       override def accept(path: Path): Boolean = path.getName.startsWith("part-")
     }).map(_.getPath).sortBy(_.getName)
     val Array(firstPart, otherParts @ _*) = parts
-    if (otherParts.size > 0) {
+    if (otherParts.nonEmpty) {
       dfs.concat(firstPart, otherParts.toArray)
     }
     dfs.rename(firstPart, dstPath)
@@ -131,7 +131,7 @@ class SparkS3Downloader(credentials: Credentials, partitionSize: Int, blockSize:
 
 class BinaryOutputFormat[K] extends FileOutputFormat[K, Array[Byte]] {
 
-  val BlockSizeConf = "sparkS3Downloader.blockSize"
+  val blockSizeConf = "sparkS3Downloader.blockSize"
 
   override def getRecordWriter(ignored: FileSystem,
                                job: JobConf,
@@ -151,7 +151,7 @@ class BinaryOutputFormat[K] extends FileOutputFormat[K, Array[Byte]] {
       true,
       fs.getConf.getInt("io.file.buffer.size", 4096),
       fs.getDefaultReplication(file),
-      job.getInt(BlockSizeConf, 0),
+      job.getInt(blockSizeConf, 0),
       progress)
     new mapred.RecordWriter[K, Array[Byte]] {
       override def write(key: K, value: Array[Byte]): Unit = {
