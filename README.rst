@@ -35,13 +35,13 @@ Downloads::
 
     export AWS_ACCESS_KEY=...
     export AWS_SECRET_KEY=...
-    spark-submit spark-s3-downloader-VERSION.jar s3://BUCKET/KEY hdfs://HOST[:PORT]/path [--s3-part-size <value>] [--hdfs-block-size <value>]
+    spark-submit spark-s3-downloader-VERSION.jar s3://BUCKET/KEY hdfs://HOST[:PORT]/PATH [--s3-part-size <value>] [--hdfs-block-size <value>]
 
 Uploads::
 
     export AWS_ACCESS_KEY=...
     export AWS_SECRET_KEY=...
-    spark-submit spark-s3-downloader-VERSION.jar hdfs://HOST[:PORT]/path s3://BUCKET/KEY
+    spark-submit spark-s3-downloader-VERSION.jar hdfs://HOST[:PORT]/PATH s3://BUCKET/KEY
 
 Build
 =====
