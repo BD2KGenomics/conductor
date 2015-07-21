@@ -43,6 +43,8 @@ Uploads::
     export AWS_SECRET_KEY=...
     spark-submit spark-s3-downloader-VERSION.jar hdfs://HOST[:PORT]/PATH s3://BUCKET/KEY
 
+To run unit tests, add the flag ``--test``.
+
 Build
 =====
 

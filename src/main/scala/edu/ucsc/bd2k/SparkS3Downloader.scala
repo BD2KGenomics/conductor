@@ -2,6 +2,7 @@ package edu.ucsc.bd2k
 
 import java.io.ByteArrayInputStream
 import java.net.URI
+import java.util.concurrent.atomic.AtomicInteger
 
 import com.amazonaws.AmazonClientException
 import com.amazonaws.auth._
@@ -49,6 +50,8 @@ object SparkS3Downloader {
         c.copy(s3PartSize = x)} text("s3-part-size indicates the size of each partition in MB; default: 64")
       opt[Int]("hdfs-block-size") action { (x, c) => 
         c.copy(hdfsBlockSize = x)} text("hdfs-block-size indicates the size of each block in MB; must divide s3-part-size evenly; default: 64")
+      opt[Unit]("test") action { (_, c) =>
+        c.copy(test = true)} text("test runs the unit tests instead of running the program")
       arg[String]("src-path") action { (x, c) =>
         c.copy(srcLocation = x) } text("location of src file; if downloading, the src must be in s3; if uploading, the src must be in hdfs")
       arg[String]("dst-path") action { (x, c) =>
@@ -56,18 +59,27 @@ object SparkS3Downloader {
     }
     parser.parse(args, Config()) match {
       case Some(config) =>
-        val partitionSize = config.s3PartSize * 1024 * 1024
-        val blockSize = config.hdfsBlockSize * 1024 * 1024
-        assert(partitionSize % blockSize == 0, "Partition size must be a multiple of block size.")
-        val src = new URI(config.srcLocation)
-        assert(src.getScheme == "s3" || src.getScheme == "hdfs", "The source file must be in S3 or HDFS.")
-        val dst = new URI(config.dstLocation)
-        if (src.getScheme == "s3") {
-          assert(dst.getScheme == "hdfs", "The destination location for a download must be in HDFS (Hadoop Distributed File System).")
-          new SparkS3Downloader(credentials, partitionSize, blockSize, src, dst).run()
-        } else if (src.getScheme == "hdfs") {
-          assert(dst.getScheme == "s3", "The destination location for an upload must be in S3.")
-          new SparkS3Uploader(credentials, src, dst).run()
+        if (config.test) {
+          try {
+            Tests.start(credentials)
+            Tests.run()
+          } finally {
+            Tests.stop
+          }
+        } else {
+          val partitionSize = config.s3PartSize * 1024 * 1024
+          val blockSize = config.hdfsBlockSize * 1024 * 1024
+          assert(partitionSize % blockSize == 0, "Partition size must be a multiple of block size.")
+          val src = new URI(config.srcLocation)
+          assert(src.getScheme == "s3" || src.getScheme == "hdfs", "The source file must be in S3 or HDFS.")
+          val dst = new URI(config.dstLocation)
+          if (src.getScheme == "s3") {
+            assert(dst.getScheme == "hdfs", "The destination location for a download must be in HDFS (Hadoop Distributed File System).")
+            new SparkS3Downloader(credentials, partitionSize, blockSize, src, dst).run()
+          } else if (src.getScheme == "hdfs") {
+            assert(dst.getScheme == "s3", "The destination location for an upload must be in S3.")
+            new SparkS3Uploader(credentials, src, dst).run()
+          }
         }
       case None =>
         // arguments are bad, error message will have been displayed
@@ -75,7 +87,11 @@ object SparkS3Downloader {
   }
 }
 
-case class Config(s3PartSize: Int = 64, hdfsBlockSize: Int = 64, srcLocation: String = "", dstLocation: String = "")
+case class Config(s3PartSize: Int = 64,
+                  hdfsBlockSize: Int = 64,
+                  srcLocation: String = "",
+                  dstLocation: String = "",
+                  test: Boolean = false)
 
 class SparkS3Downloader(credentials: Credentials, partitionSize: Int, blockSize: Int, src: URI, dst: URI) extends Serializable {
 
@@ -168,13 +184,16 @@ class SparkS3Uploader(credentials: Credentials, src: URI, dst: URI) extends java
     val conf = new SparkConf().setAppName("SparkS3Uploader")
     val sc = new SparkContext(conf)
     val hadoopRDD = sc.hadoopFile[Partition, Array[Byte], BinaryInputFormat](src.toString)
+    val indexedRDD = hadoopRDD.zipWithIndex()
     val s3 = new AmazonS3Client(credentials.toAwsCredentials)
     val response = s3.initiateMultipartUpload(new InitiateMultipartUploadRequest(dstBucket, dstKey))
     val uploadId: String = response.getUploadId
     try {
-      val eTagRDD = hadoopRDD.map(Function.tupled(
-        (partition: Partition, block: Array[Byte]) => {
-          val partETag = upload(uploadId, partition, block)
+      val eTagRDD = indexedRDD.map(Function.tupled(
+        (data: (Partition, Array[Byte]), part: Long) => {
+          val partition = data._1
+          val block = data._2
+          val partETag = upload(uploadId, partition, block, part.toInt + 1)
           (partETag.getETag, partETag.getPartNumber)
         }))
       val partETags: java.util.List[PartETag] = eTagRDD
@@ -194,8 +213,8 @@ class SparkS3Uploader(credentials: Credentials, src: URI, dst: URI) extends java
     }
   }
 
-  def upload(uploadId: String, partition: Partition, block: Array[Byte]): PartETag = {
-    val partNum: Long = Math.min((partition.getStart + 1) / partition.getSize + 1, maxPartNumber)
+  def upload(uploadId: String, partition: Partition, block: Array[Byte], partNum: Int): PartETag = {
+    //val partNum: Long = Math.min((partition.getStart + 1) / partition.getSize + 1, maxPartNumber)
     val s3 = new AmazonS3Client(credentials.toAwsCredentials)
     val stream = new ByteArrayInputStream(block)
     val response = s3.uploadPart(new UploadPartRequest()
