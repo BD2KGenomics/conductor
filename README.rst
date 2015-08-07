@@ -35,15 +35,20 @@ Downloads::
 
     export AWS_ACCESS_KEY=...
     export AWS_SECRET_KEY=...
-    spark-submit spark-s3-downloader-VERSION.jar s3://BUCKET/KEY hdfs://HOST[:PORT]/PATH [--s3-part-size <value>] [--hdfs-block-size <value>]
+    spark-submit spark-s3-downloader-VERSION.jar s3://BUCKET/KEY hdfs://HOST[:PORT]/PATH [--s3-part-size <value>] [--hdfs-block-size <value>] [--concat]
 
 Uploads::
 
     export AWS_ACCESS_KEY=...
     export AWS_SECRET_KEY=...
-    spark-submit spark-s3-downloader-VERSION.jar hdfs://HOST[:PORT]/PATH s3://BUCKET/KEY
+    spark-submit spark-s3-downloader-VERSION.jar hdfs://HOST[:PORT]/PATH s3://BUCKET/KEY [--concat]
 
-To run unit tests, add the flag ``--test``.
+Using the "--concat" flag concatenates all the parts of the files following the
+upload or download. The source path can be to either a file or directory. If the
+path points to a file, the parts will be created in the specified part sizes; if
+it points to a directory, each part will correspond to a file in the directory.
+Concatenation only works in downloader if all of the parts except for the last one
+are equal-sized and multiples of the specified block size.
 
 Build
 =====

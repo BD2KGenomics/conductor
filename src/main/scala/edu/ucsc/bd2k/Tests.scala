@@ -37,14 +37,14 @@ object Tests {
     simpleBytes = uploadFile(partSize, simple)
     val simpleSrc = "s3://" + bucketName + "/" + simple
     val simpleDst = "hdfs://" + simple
-    simpleSs3d = new SparkS3Downloader(credentials, partSize, partSize, new URI(simpleSrc), new URI(simpleDst))
+    simpleSs3d = new SparkS3Downloader(credentials, partSize, partSize, new URI(simpleSrc), new URI(simpleDst), true)
 
     bigBytes = uploadFile(bigFileSize, big)
     val bigSrc = "s3://" + bucketName + "/" + big
     val bigDst = "hdfs://" + big
-    bigSs3d = new SparkS3Downloader(credentials, partSize, partSize, new URI(bigSrc), new URI(bigDst))
+    bigSs3d = new SparkS3Downloader(credentials, partSize, partSize, new URI(bigSrc), new URI(bigDst), true)
 
-    val ss3u = new SparkS3Uploader(credentials, new URI(bigDst), new URI(bigSrc))
+    val ss3u = new SparkS3Uploader(credentials, new URI(bigDst), new URI(bigSrc), true)
   }
 
   def uploadFile(size: Int, name: String): Array[Byte] = {
@@ -109,12 +109,12 @@ object Tests {
   def downloadTest(): Unit = {
     val simpleResult = simpleSs3d.partition(partSize).toArray
     val simplePart = simpleResult(0)
-    assert(simpleSs3d.download(simplePart).sameElements(simpleBytes))
+    assert(simpleSs3d.downloadPart(simplePart).sameElements(simpleBytes))
 
     val bigResult = bigSs3d.partition(bigFileSize).toArray
-    assert(bigSs3d.download(bigResult(0)).sameElements(Arrays.copyOfRange(bigBytes, 0, partSize)))
-    assert(bigSs3d.download(bigResult(1)).sameElements(Arrays.copyOfRange(bigBytes, partSize, 2 * partSize)))
-    assert(bigSs3d.download(bigResult(2)).sameElements(Arrays.copyOfRange(bigBytes, 2 * partSize, bigFileSize)))
+    assert(bigSs3d.downloadPart(bigResult(0)).sameElements(Arrays.copyOfRange(bigBytes, 0, partSize)))
+    assert(bigSs3d.downloadPart(bigResult(1)).sameElements(Arrays.copyOfRange(bigBytes, partSize, 2 * partSize)))
+    assert(bigSs3d.downloadPart(bigResult(2)).sameElements(Arrays.copyOfRange(bigBytes, 2 * partSize, bigFileSize)))
   }
 
   def sparkS3DownloaderTest(): Unit = {
@@ -129,7 +129,7 @@ object Tests {
     s3.completeMultipartUpload(new CompleteMultipartUploadRequest())
   }*/
 
-  def stop: Unit = {
+  def stop(): Unit = {
     deleteFile(simple)
     deleteFile(big)
     s3.deleteBucket(bucketName)
