@@ -2,30 +2,25 @@ package edu.ucsc.bd2k
 
 import java.io.ByteArrayInputStream
 import java.net.URI
-import java.util.concurrent.atomic.AtomicInteger
 
 import com.amazonaws.AmazonClientException
 import com.amazonaws.auth._
 import com.amazonaws.auth.profile.ProfileCredentialsProvider
-import com.amazonaws.services.s3.{AmazonS3URI, AmazonS3Client}
+import com.amazonaws.services.s3.AmazonS3Client
 import com.amazonaws.services.s3.model._
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs._
-import org.apache.hadoop.fs.permission.FsPermission
 import org.apache.hadoop.hdfs.DistributedFileSystem
-import org.apache.hadoop.io.{LongWritable, BytesWritable}
 import org.apache.hadoop.mapred
 import org.apache.hadoop.mapred._
 import org.apache.hadoop.util.Progressable
 import org.apache.spark.SparkContext._
-import org.apache.spark.rdd.HadoopRDD
 import org.apache.spark.{SparkConf, SparkContext}
 
 import scala.collection.JavaConversions
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
-import scala.collection.mutable.MutableList
 
 /*
   Copyright 2015 Hannes Schmidt, Clayton Sanford
@@ -50,32 +45,48 @@ object SparkS3Downloader {
     val credentials = Credentials()
     val parser = new scopt.OptionParser[Config]("scopt") {
       opt[Int]("s3-part-size") action { (x, c) =>
-        c.copy(s3PartSize = x)} text("s3-part-size indicates the size of each partition in MB; default: 64")
+        c.copy(s3PartSize = x)} text("s3-part-size indicates the size of " +
+        "each partition in MB; default: 64")
       opt[Int]("hdfs-block-size") action { (x, c) => 
-        c.copy(hdfsBlockSize = x)} text("hdfs-block-size indicates the size of each block in MB; must divide s3-part-size evenly; default: 64")
+        c.copy(hdfsBlockSize = x)} text("hdfs-block-size indicates the size" +
+        " of each block in MB; must divide s3-part-size evenly; default: 64")
       opt[Unit]("concat") action { (_, c) =>
-        c.copy(concat = true)} text("concatenates the parts of the files after uploads and downloads")
-      /*opt[Unit]("test") action { (_, c) =>
-        c.copy(test = true)} text("test runs the unit tests instead of running the program")*/
+        c.copy(concat = true)} text("concatenates the parts of the files " +
+        "after uploads and downloads")
       arg[String]("src-path") action { (x, c) =>
-        c.copy(srcLocation = x) } text("location of src file; if downloading, the src must be in s3; if uploading, the src must be in hdfs")
+        c.copy(srcLocation = x) } text("location of src file; if " +
+        "downloading, the src must be in s3; if uploading, the " +
+        "src must be in hdfs")
       arg[String]("dst-path") action { (x, c) =>
-        c.copy(dstLocation = x) } text("location of dst file; if downloading, the dst must be in hdfs; if uploading, the dst must be in s3")
+        c.copy(dstLocation = x) } text("location of dst file; if " +
+        "downloading, the dst must be in hdfs; if uploading, the " +
+        "dst must be in s3")
     }
     parser.parse(args, Config()) match {
       case Some(config) =>
           val partitionSize = config.s3PartSize * 1024 * 1024
           val blockSize = config.hdfsBlockSize * 1024 * 1024
-          assert(partitionSize % blockSize == 0, "Partition size must be a multiple of block size.")
+          assert(partitionSize % blockSize == 0,
+            "Partition size must be a multiple of block size.")
           val src = new URI(config.srcLocation)
-          assert(src.getScheme == "s3" || src.getScheme == "hdfs", "The source file must be in S3 or HDFS.")
+          assert(src.getScheme == "s3" || src.getScheme == "hdfs",
+            "The source file must be in S3 or HDFS.")
           val dst = new URI(config.dstLocation)
           val concat = config.concat
           if (src.getScheme == "s3") {
-            assert(dst.getScheme == "hdfs", "The destination location for a download must be in HDFS (Hadoop Distributed File System).")
-            new SparkS3Downloader(credentials, partitionSize, blockSize, src, dst, concat).run()
+            assert(dst.getScheme == "hdfs",
+              "The destination location for a download must be in HDFS" +
+                " (Hadoop Distributed File System).")
+            new SparkS3Downloader(
+              credentials,
+              partitionSize,
+              blockSize,
+              src,
+              dst,
+              concat).run()
           } else if (src.getScheme == "hdfs") {
-            assert(dst.getScheme == "s3", "The destination location for an upload must be in S3.")
+            assert(dst.getScheme == "s3",
+              "The destination location for an upload must be in S3.")
             new SparkS3Uploader(credentials, src, dst, concat).run()
           }
       case None =>
@@ -92,11 +103,17 @@ case class Config(s3PartSize: Int = 64,
                   concat: Boolean = false
                    )
 
-class SparkS3Downloader(credentials: Credentials, partitionSize: Int, blockSize: Int, src: URI, dst: URI, concat: Boolean) extends Serializable {
+class SparkS3Downloader(credentials: Credentials,
+                        partitionSize: Int,
+                        blockSize: Int,
+                        src: URI,
+                        dst: URI,
+                        concat: Boolean) extends Serializable {
 
   val srcBucket = src.getHost
   val srcPath = src.getPath
-  assert(srcPath(0) == '/', "The path to the source file must be valid and start with '/'.")
+  assert(srcPath(0) == '/',
+    "The path to the source file must be valid and start with '/'.")
   val srcKey = srcPath.substring(1)
   val splitDst = new URI(dst.toString + ".parts")
   val blockSizeConf = "sparkS3Downloader.blockSize"
@@ -104,7 +121,8 @@ class SparkS3Downloader(credentials: Credentials, partitionSize: Int, blockSize:
   def run() {
     val s3 = new AmazonS3Client(credentials.toAwsCredentials)
     val objects = JavaConversions
-      .asScalaBuffer(s3.listObjects(srcBucket, srcKey + "/").getObjectSummaries)
+      .asScalaBuffer(
+        s3.listObjects(srcBucket, srcKey + "/").getObjectSummaries)
       .toList
       .filter(o => !o.getKey.endsWith("_SUCCESS"))
     val keys = objects.map(summary => summary.getKey)
@@ -121,7 +139,11 @@ class SparkS3Downloader(credentials: Credentials, partitionSize: Int, blockSize:
       sc.hadoopConfiguration.setInt(blockSizeConf, blockSize)
       sc.parallelize(partitions, partitions.size)
         .map(partition => (partition, downloadPart(partition)))
-        .saveAsHadoopFile(destination.toString, classOf[Object], classOf[Array[Byte]], classOf[BinaryOutputFormat[Object]])
+        .saveAsHadoopFile(
+          destination.toString,
+          classOf[Object],
+          classOf[Array[Byte]],
+          classOf[BinaryOutputFormat[Object]])
     } else {
       val inputBlockSize = objects.head.getSize
       if (concat) {
@@ -133,11 +155,14 @@ class SparkS3Downloader(credentials: Credentials, partitionSize: Int, blockSize:
             validConcat = false
           }
         }
-        assert(validConcat, "For objects to be concatenated, all but the last one must be the same size and be divisible by the HDFS block size.")
+        assert(validConcat,
+          "For objects to be concatenated, all but the last one must be the" +
+            " same size and be divisible by the HDFS block size.")
       }
       sc.makeRDD(keys)
         .zipWithIndex()
-        .foreach(keyAndIndex => downloadFile(keyAndIndex._1, keyAndIndex._2, destination))
+        .foreach(keyAndIndex =>
+        downloadFile(keyAndIndex._1, keyAndIndex._2, destination))
     }
     if (concat) {
       concat(sc)
@@ -163,7 +188,8 @@ class SparkS3Downloader(credentials: Credentials, partitionSize: Int, blockSize:
     val size = partition.getSize
     val start = partition.getStart
     assert(size > 0, "Partitions cannot be empty.")
-    assert(size <= partitionSize, "No partition can exceed the specified part size.")
+    assert(size <= partitionSize,
+      "No partition can exceed the specified part size.")
     val s3 = new AmazonS3Client(credentials.toAwsCredentials)
     val req = new GetObjectRequest(srcBucket, srcKey)
     req.setRange(start, start + size - 1)
@@ -192,12 +218,12 @@ class SparkS3Downloader(credentials: Credentials, partitionSize: Int, blockSize:
     var partName = key.split("/")(1)
     if (concat) {
       val partDigit = 5
-      val formattedNumber: String = index.toString.reverse.padTo(partDigit, '0').reverse
+      val formattedNumber =
+        index.toString.reverse.padTo(partDigit, '0').reverse
       partName = "part-" + formattedNumber
     }
     val content = IOUtils.toByteArray(file.getObjectContent)
     val config = new Configuration()
-    //assert(dst.getFragment.isEmpty, "There should be no fragment on the destination URI.")
     val hdfsRootURI = new URI(dst.getScheme, dst.getHost, "/","")
     val hdfs = FileSystem.get(hdfsRootURI, config)
     try {
@@ -220,11 +246,14 @@ class SparkS3Downloader(credentials: Credentials, partitionSize: Int, blockSize:
   }
 
   def concat(sc: SparkContext): Unit = {
-    val dfs = FileSystem.get(dst, sc.hadoopConfiguration).asInstanceOf[DistributedFileSystem]
+    val dfs =
+      FileSystem.get(dst, sc.hadoopConfiguration)
+        .asInstanceOf[DistributedFileSystem]
     val splitDstPath = new Path(splitDst)
     val dstPath = new Path(dst)
     val parts = dfs.listStatus(splitDstPath, new PathFilter {
-      override def accept(path: Path): Boolean = path.getName.startsWith("part-")
+      override def accept(path: Path): Boolean =
+        path.getName.startsWith("part-")
     }).map(_.getPath).sortBy(_.getName)
     val Array(firstPart, otherParts @ _*) = parts
     if (otherParts.nonEmpty) {
@@ -235,7 +264,9 @@ class SparkS3Downloader(credentials: Credentials, partitionSize: Int, blockSize:
   }
 
   def noConcat(sc: SparkContext): Unit = {
-    val hdfs = FileSystem.get(dst, sc.hadoopConfiguration).asInstanceOf[DistributedFileSystem]
+    val hdfs =
+      FileSystem.get(dst, sc.hadoopConfiguration)
+        .asInstanceOf[DistributedFileSystem]
     try {
       hdfs.createNewFile(new Path(dst.toString + "/_SUCCESS"))
     } finally {
@@ -244,11 +275,15 @@ class SparkS3Downloader(credentials: Credentials, partitionSize: Int, blockSize:
   }
 }
 
-class SparkS3Uploader(credentials: Credentials, src: URI, dst: URI, concat: Boolean) extends java.io.Serializable {
+class SparkS3Uploader(credentials: Credentials,
+                      src: URI,
+                      dst: URI,
+                      concat: Boolean) extends java.io.Serializable {
 
   val dstBucket = dst.getHost
   val dstPath = dst.getPath
-  assert(dstPath(0) == '/', "The path to the destination file must be valid and start with '/'.")
+  assert(dstPath(0) == '/',
+    "The path to the destination file must be valid and start with '/'.")
   val dstKey = dstPath.substring(1)
   val maxPartNumber = 10000
   //val splitDst = new URI(dst.toString + ".parts")
@@ -264,24 +299,29 @@ class SparkS3Uploader(credentials: Credentials, src: URI, dst: URI, concat: Bool
   def concatUpload() {
     val conf = new SparkConf().setAppName("SparkS3Uploader")
     val sc = new SparkContext(conf)
-    val hadoopRDD = sc.hadoopFile[Partition, Array[Byte], BinaryInputFormat](src.toString)
+    val hadoopRDD =
+      sc.hadoopFile[Partition, Array[Byte], BinaryInputFormat](src.toString)
     val indexedRDD = hadoopRDD
       .filter(pair => !pair._2.isEmpty)
       .zipWithIndex()
     val s3 = new AmazonS3Client(credentials.toAwsCredentials)
-    val response = s3.initiateMultipartUpload(new InitiateMultipartUploadRequest(dstBucket, dstKey))
+    val response =
+      s3.initiateMultipartUpload(
+        new InitiateMultipartUploadRequest(dstBucket, dstKey))
     val uploadId: String = response.getUploadId
     try {
       val eTagRDD = indexedRDD.map(Function.tupled(
         (partData: (Partition, Array[Byte]), part: Long) => {
           val partition = partData._1
           val block = partData._2
-          val partETag = concatPartUpload(uploadId, partition, block, part.toInt + 1)
+          val partETag =
+            concatPartUpload(uploadId, partition, block, part.toInt + 1)
           (partETag.getETag, partETag.getPartNumber)
         }))
       val partETags: java.util.List[PartETag] = eTagRDD
         .collect()
-        .map(Function.tupled((eTag: String, part: Int) => new PartETag(part, eTag)))
+        .map(Function.tupled((eTag: String, part: Int) =>
+        new PartETag(part, eTag)))
         .toBuffer
         .asJava
       s3.completeMultipartUpload(new CompleteMultipartUploadRequest()
@@ -291,12 +331,16 @@ class SparkS3Uploader(credentials: Credentials, src: URI, dst: URI, concat: Bool
         .withPartETags(partETags))
     } catch {
       case e: Exception =>
-        s3.abortMultipartUpload(new AbortMultipartUploadRequest(dstBucket, dstKey, uploadId))
+        s3.abortMultipartUpload(
+          new AbortMultipartUploadRequest(dstBucket, dstKey, uploadId))
         e.printStackTrace()
     }
   }
 
-  def concatPartUpload(uploadId: String, partition: Partition, block: Array[Byte], partNum: Int): PartETag = {
+  def concatPartUpload(uploadId: String,
+                       partition: Partition,
+                       block: Array[Byte],
+                       partNum: Int): PartETag = {
     val s3 = new AmazonS3Client(credentials.toAwsCredentials)
     val stream = new ByteArrayInputStream(block)
     val response = s3.uploadPart(new UploadPartRequest()
@@ -312,7 +356,8 @@ class SparkS3Uploader(credentials: Credentials, src: URI, dst: URI, concat: Bool
   def nonConcatUpload() {
     val conf = new SparkConf().setAppName("SparkS3Uploader")
     val sc = new SparkContext(conf)
-    val hadoopRDD = sc.hadoopFile[Partition, Array[Byte], BinaryInputFormat](src.toString)
+    val hadoopRDD =
+      sc.hadoopFile[Partition, Array[Byte], BinaryInputFormat](src.toString)
     val indexedRDD = hadoopRDD
       .filter(pair => !pair._2.isEmpty)
       .zipWithIndex()
@@ -325,17 +370,28 @@ class SparkS3Uploader(credentials: Credentials, src: URI, dst: URI, concat: Bool
       }))
     val metadata = new ObjectMetadata()
     metadata.setContentLength(0)
-    s3.putObject(dstBucket, dstKey + "/_SUCCESS", new ByteArrayInputStream(new Array[Byte](0)), metadata)
+    s3.putObject(
+      dstBucket,
+      dstKey + "/_SUCCESS",
+      new ByteArrayInputStream(new Array[Byte](0)),
+      metadata)
   }
 
-  def nonConcatPartUpload(partition: Partition, block: Array[Byte], partNum: Int) = {
+  def nonConcatPartUpload(partition: Partition,
+                          block: Array[Byte],
+                          partNum: Int) = {
     val s3 = new AmazonS3Client(credentials.toAwsCredentials)
     val partDigit = 5
     val metadata = new ObjectMetadata()
     metadata.setContentLength(block.length)
     val stream = new ByteArrayInputStream(block)
-    val formattedNumber: String = partNum.toString.reverse.padTo(partDigit, '0').reverse
-    s3.putObject(dstBucket, dstKey + "/part-" + formattedNumber, stream, metadata)
+    val formattedNumber: String =
+      partNum.toString.reverse.padTo(partDigit, '0').reverse
+    s3.putObject(
+      dstBucket,
+      dstKey + "/part-" + formattedNumber,
+      stream,
+      metadata)
   }
 
 }
@@ -348,7 +404,8 @@ class BinaryOutputFormat[K] extends FileOutputFormat[K, Array[Byte]] {
   override def getRecordWriter(ignored: FileSystem,
                                job: JobConf,
                                name: String,
-                               progress: Progressable): mapred.RecordWriter[K, Array[Byte]] = {
+                               progress: Progressable):
+  mapred.RecordWriter[K, Array[Byte]] = {
     val file: Path = FileOutputFormat.getTaskOutputPath(job, name)
     val fs: FileSystem = file.getFileSystem(job)
     /*
@@ -381,7 +438,8 @@ class BinaryInputFormat extends FileInputFormat[Partition, Array[Byte]] {
 
   override def getRecordReader(inputSplit: InputSplit,
                                jobConf: JobConf,
-                               reporter: Reporter): RecordReader[Partition, Array[Byte]] = {
+                               reporter: Reporter):
+  RecordReader[Partition, Array[Byte]] = {
     val fileSplit = inputSplit.asInstanceOf[FileSplit]
     val path: Path = fileSplit.getPath
     val fs: FileSystem = path.getFileSystem(jobConf)
