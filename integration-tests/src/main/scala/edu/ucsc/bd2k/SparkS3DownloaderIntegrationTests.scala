@@ -3,26 +3,19 @@ package edu.ucsc.bd2k
 import java.io.{File, FileOutputStream}
 import java.net.URI
 import java.util
+import java.util.Random
 
 import com.amazonaws.services.s3.AmazonS3Client
-import com.amazonaws.services.s3.model.S3ObjectSummary
-import org.apache.spark.{SparkContext, SparkConf}
-import org.scalatest._
+import org.apache.spark.{SparkConf, SparkContext}
 
-import scala.collection.mutable.Stack
-import scala.util.Random
-
-class SparkS3DownloaderSpec extends FlatSpec
-with Matchers with BeforeAndAfter {
-
-  val master = "spark://54.187.162.127:7077"
-  val conf = new SparkConf().setMaster(master).setAppName("spark-s3-downloader Tests")
-  val sc = new SparkContext(conf)
-  val partSize = 64 * 1024 * 1024
+object SparkS3DownloaderTests {
 
   val credentials = Credentials()
   val s3 = new AmazonS3Client(credentials.toAwsCredentials)
+  val conf = new SparkConf().setAppName("spark-s3-downloader Tests")
+  val sc = new SparkContext(conf)
   val bucketName = "s3-downloader-tests"
+  val partSize = 64 * 1024 * 1024
   s3.createBucket(bucketName)
 
   val simple = "simple_file"
@@ -56,7 +49,18 @@ with Matchers with BeforeAndAfter {
   var ss3u: SparkS3Uploader = null
   val uploadName = "upload_test"
 
-  after {
+  def main: Unit = {
+    try {
+      partitionTest
+      downloadTest
+      println("All tests passed!")
+    } finally {
+      stop
+    }
+
+  }
+
+  def stop {
     sc.stop()
     val summaries = s3.listObjects(bucketName).getObjectSummaries
     for (n <- 0 to summaries.size() - 1) {
@@ -65,6 +69,7 @@ with Matchers with BeforeAndAfter {
     }
     s3.deleteBucket(bucketName)
   }
+
 
   def uploadFile(size: Int, name: String): Array[Byte] = {
     val dst = name
@@ -77,23 +82,7 @@ with Matchers with BeforeAndAfter {
     bytes
   }
 
-  "A Stack" should "pop values in last-in-first-out order" in {
-    val stack = new Stack[Int]
-    stack.push(1)
-    stack.push(2)
-    stack.pop() should be (2)
-    stack.pop() should be (1)
-  }
-
-  it should "throw NoSuchElementException if an empty stack is popped" in {
-    val emptyStack = new Stack[Int]
-    a [NoSuchElementException] should be thrownBy {
-      emptyStack.pop()
-    }
-  }
-
-  "The partition method" should "assign partitions correctly-sized to the " +
-    "partition size" in {
+  def partitionTest {
     val partitionResult = simpleSs3d.partition(partSize).toArray
     assert(partitionResult.length == 1)
     assert(partitionResult(0).getSize == partSize)
@@ -126,9 +115,7 @@ with Matchers with BeforeAndAfter {
     assert(bigResult(2).getStart == partSize * 2)
   }
 
-  "The download method" should "download bytes in the partition that are " +
-    "identical to the bytes randomly created in those positions of the " +
-    "file" in {
+  def downloadTest {
     val simpleResult = simpleSs3d.partition(partSize).toArray
     val simplePart = simpleResult(0)
     assert(simpleSs3d.downloadPart(simplePart).sameElements(simpleBytes))

@@ -1,2 +1,4 @@
-/target
+/main/target
+/integration-tests/target
 /test-files
+/.trash
