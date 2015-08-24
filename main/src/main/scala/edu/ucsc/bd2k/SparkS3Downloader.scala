@@ -129,45 +129,49 @@ class SparkS3Downloader(credentials: Credentials,
     val isFile = objects.isEmpty
     val conf = new SparkConf().setAppName("SparkS3Downloader")
     val sc = new SparkContext(conf)
-    var destination = dst
-    if (concat) {
-      destination = splitDst
-    }
-    if (isFile) {
-      val size: Long = s3.getObjectMetadata(srcBucket, srcKey).getContentLength
-      val partitions: ArrayBuffer[Partition] = partition(size)
-      sc.hadoopConfiguration.setInt(blockSizeConf, blockSize)
-      sc.parallelize(partitions, partitions.size)
-        .map(partition => (partition, downloadPart(partition)))
-        .saveAsHadoopFile(
-          destination.toString,
-          classOf[Object],
-          classOf[Array[Byte]],
-          classOf[BinaryOutputFormat[Object]])
-    } else {
-      val inputBlockSize = objects.head.getSize
+    try {
+      var destination = dst
       if (concat) {
-        var validConcat = true
-        for (n <- 0 to objects.length - 2) {
-          println("~~~~~~~~~~~~~OBJECT#" + n + " SIZE:" + objects(n).getSize)
-          val nSize = objects(n).getSize
-          if (!(nSize == inputBlockSize && nSize % blockSize == 0)) {
-            validConcat = false
-          }
-        }
-        assert(validConcat,
-          "For objects to be concatenated, all but the last one must be the" +
-            " same size and be divisible by the HDFS block size.")
+        destination = splitDst
       }
-      sc.makeRDD(keys)
-        .zipWithIndex()
-        .foreach(keyAndIndex =>
-        downloadFile(keyAndIndex._1, keyAndIndex._2, destination))
-    }
-    if (concat) {
-      concat(sc)
-    } else {
-      noConcat(sc)
+      if (isFile) {
+        val size: Long = s3.getObjectMetadata(srcBucket, srcKey).getContentLength
+        val partitions: ArrayBuffer[Partition] = partition(size)
+        sc.hadoopConfiguration.setInt(blockSizeConf, blockSize)
+        sc.parallelize(partitions, partitions.size)
+          .map(partition => (partition, downloadPart(partition)))
+          .saveAsHadoopFile(
+            destination.toString,
+            classOf[Object],
+            classOf[Array[Byte]],
+            classOf[BinaryOutputFormat[Object]])
+      } else {
+        val inputBlockSize = objects.head.getSize
+        if (concat) {
+          var validConcat = true
+          for (n <- 0 to objects.length - 2) {
+            println("~~~~~~~~~~~~~OBJECT#" + n + " SIZE:" + objects(n).getSize)
+            val nSize = objects(n).getSize
+            if (!(nSize == inputBlockSize && nSize % blockSize == 0)) {
+              validConcat = false
+            }
+          }
+          assert(validConcat,
+            "For objects to be concatenated, all but the last one must be the" +
+              " same size and be divisible by the HDFS block size.")
+        }
+        sc.makeRDD(keys)
+          .zipWithIndex()
+          .foreach(keyAndIndex =>
+          downloadFile(keyAndIndex._1, keyAndIndex._2, destination))
+      }
+      if (concat) {
+        concat(sc)
+      } else {
+        noConcat(sc)
+      }
+    } finally {
+      sc.stop()
     }
   }
 
@@ -299,41 +303,45 @@ class SparkS3Uploader(credentials: Credentials,
   def concatUpload() {
     val conf = new SparkConf().setAppName("SparkS3Uploader")
     val sc = new SparkContext(conf)
-    val hadoopRDD =
-      sc.hadoopFile[Partition, Array[Byte], BinaryInputFormat](src.toString)
-    val indexedRDD = hadoopRDD
-      .filter(pair => !pair._2.isEmpty)
-      .zipWithIndex()
-    val s3 = new AmazonS3Client(credentials.toAwsCredentials)
-    val response =
-      s3.initiateMultipartUpload(
-        new InitiateMultipartUploadRequest(dstBucket, dstKey))
-    val uploadId: String = response.getUploadId
     try {
-      val eTagRDD = indexedRDD.map(Function.tupled(
-        (partData: (Partition, Array[Byte]), part: Long) => {
-          val partition = partData._1
-          val block = partData._2
-          val partETag =
-            concatPartUpload(uploadId, partition, block, part.toInt + 1)
-          (partETag.getETag, partETag.getPartNumber)
-        }))
-      val partETags: java.util.List[PartETag] = eTagRDD
-        .collect()
-        .map(Function.tupled((eTag: String, part: Int) =>
-        new PartETag(part, eTag)))
-        .toBuffer
-        .asJava
-      s3.completeMultipartUpload(new CompleteMultipartUploadRequest()
-        .withBucketName(dstBucket)
-        .withKey(dstKey)
-        .withUploadId(uploadId)
-        .withPartETags(partETags))
-    } catch {
-      case e: Exception =>
-        s3.abortMultipartUpload(
-          new AbortMultipartUploadRequest(dstBucket, dstKey, uploadId))
-        e.printStackTrace()
+      val hadoopRDD =
+        sc.hadoopFile[Partition, Array[Byte], BinaryInputFormat](src.toString)
+      val indexedRDD = hadoopRDD
+        .filter(pair => !pair._2.isEmpty)
+        .zipWithIndex()
+      val s3 = new AmazonS3Client(credentials.toAwsCredentials)
+      val response =
+        s3.initiateMultipartUpload(
+          new InitiateMultipartUploadRequest(dstBucket, dstKey))
+      val uploadId: String = response.getUploadId
+      try {
+        val eTagRDD = indexedRDD.map(Function.tupled(
+          (partData: (Partition, Array[Byte]), part: Long) => {
+            val partition = partData._1
+            val block = partData._2
+            val partETag =
+              concatPartUpload(uploadId, partition, block, part.toInt + 1)
+            (partETag.getETag, partETag.getPartNumber)
+          }))
+        val partETags: java.util.List[PartETag] = eTagRDD
+          .collect()
+          .map(Function.tupled((eTag: String, part: Int) =>
+          new PartETag(part, eTag)))
+          .toBuffer
+          .asJava
+        s3.completeMultipartUpload(new CompleteMultipartUploadRequest()
+          .withBucketName(dstBucket)
+          .withKey(dstKey)
+          .withUploadId(uploadId)
+          .withPartETags(partETags))
+      } catch {
+        case e: Exception =>
+          s3.abortMultipartUpload(
+            new AbortMultipartUploadRequest(dstBucket, dstKey, uploadId))
+          e.printStackTrace()
+      }
+    } finally {
+      sc.stop()
     }
   }
 
@@ -356,25 +364,29 @@ class SparkS3Uploader(credentials: Credentials,
   def nonConcatUpload() {
     val conf = new SparkConf().setAppName("SparkS3Uploader")
     val sc = new SparkContext(conf)
-    val hadoopRDD =
-      sc.hadoopFile[Partition, Array[Byte], BinaryInputFormat](src.toString)
-    val indexedRDD = hadoopRDD
-      .filter(pair => !pair._2.isEmpty)
-      .zipWithIndex()
-    val s3 = new AmazonS3Client(credentials.toAwsCredentials)
-    indexedRDD.foreach(Function.tupled(
-      (partData: (Partition, Array[Byte]), part: Long) => {
-        val partition = partData._1
-        val block = partData._2
-        nonConcatPartUpload(partition, block, part.toInt + 1)
-      }))
-    val metadata = new ObjectMetadata()
-    metadata.setContentLength(0)
-    s3.putObject(
-      dstBucket,
-      dstKey + "/_SUCCESS",
-      new ByteArrayInputStream(new Array[Byte](0)),
-      metadata)
+    try {
+      val hadoopRDD =
+        sc.hadoopFile[Partition, Array[Byte], BinaryInputFormat](src.toString)
+      val indexedRDD = hadoopRDD
+        .filter(pair => !pair._2.isEmpty)
+        .zipWithIndex()
+      val s3 = new AmazonS3Client(credentials.toAwsCredentials)
+      indexedRDD.foreach(Function.tupled(
+        (partData: (Partition, Array[Byte]), part: Long) => {
+          val partition = partData._1
+          val block = partData._2
+          nonConcatPartUpload(partition, block, part.toInt + 1)
+        }))
+      val metadata = new ObjectMetadata()
+      metadata.setContentLength(0)
+      s3.putObject(
+        dstBucket,
+        dstKey + "/_SUCCESS",
+        new ByteArrayInputStream(new Array[Byte](0)),
+        metadata)
+    } finally {
+      sc.stop()
+    }
   }
 
   def nonConcatPartUpload(partition: Partition,

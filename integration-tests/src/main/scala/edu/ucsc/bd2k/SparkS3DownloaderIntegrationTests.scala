@@ -6,38 +6,51 @@ import java.util
 import java.util.Random
 
 import com.amazonaws.services.s3.AmazonS3Client
+import org.apache.commons.io.IOUtils
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs._
 import org.apache.spark.{SparkConf, SparkContext}
 
-object SparkS3DownloaderTests {
+case class Config(masterPublicDNS: String = "")
+
+object SparkS3DownloaderIntegrationTests {
 
   val credentials = Credentials()
+
   val s3 = new AmazonS3Client(credentials.toAwsCredentials)
   val conf = new SparkConf().setAppName("spark-s3-downloader Tests")
   val sc = new SparkContext(conf)
   val bucketName = "s3-downloader-tests"
-  val partSize = 64 * 1024 * 1024
+  //val partSize = 64 * 1024 * 1024
+  val partSize = 1024 * 1024 * 8
   s3.createBucket(bucketName)
 
-  val simple = "simple_file"
-  val simpleBytes: Array[Byte] = uploadFile(partSize, simple)
-  val simpleSrc = "s3://" + bucketName + "/" + simple
-  val simpleDst = "hdfs://" + simple
-  val simpleSs3d =
+  val s3Prefix = "s3://"
+  val hdfsPrefix = "hdfs://"
+  var dstPrefix = ""
+
+  val smallName = "simple_file"
+  val smallFileSize = partSize
+  var smallBytes: Array[Byte] = uploadFile(partSize, smallName)
+  val smallSrc = s3Prefix + bucketName + "/" + smallName
+  val smallDst = dstPrefix + smallName
+  var smallDownloader =
     new SparkS3Downloader(
       credentials,
       partSize,
       partSize,
-      new URI(simpleSrc),
-      new URI(simpleDst),
+      new URI(smallSrc),
+      new URI(smallDst),
       true)
 
   val big = "big_file"
-  val bigFileSize = 64 * 1024 * 1024 * 5 / 2
+  //val bigFileSize = 64 * 1024 * 1024 * 5 / 2
+  val bigFileSize = 1024 * 1024 * 5 / 2 * 8
   // A file to be divided into 2 full partitions and one half paritition
-  val bigBytes: Array[Byte] = uploadFile(bigFileSize, big)
-  val bigSrc = "s3://" + bucketName + "/" + big
-  val bigDst = "hdfs://" + big
-  val bigSs3d =
+  var bigBytes: Array[Byte] = uploadFile(bigFileSize, big)
+  val bigSrc = s3Prefix + bucketName + "/" + big
+  val bigDst = dstPrefix + big
+  var bigDownloader =
     new SparkS3Downloader(
       credentials,
       partSize,
@@ -46,28 +59,48 @@ object SparkS3DownloaderTests {
       new URI(bigDst),
       true)
 
-  var ss3u: SparkS3Uploader = null
-  val uploadName = "upload_test"
+  val hdfsDir = "/testDir/"
+  var hdfs = new Path(dstPrefix + "/").getFileSystem(new Configuration())
+  //val hdfs3 = new Path(hdfsPrefix + "/").getFileSystem(new Configuration())
+  hdfs.mkdirs(new Path(dstPrefix + hdfsDir))
 
-  def main: Unit = {
-    try {
-      partitionTest
-      downloadTest
-      println("All tests passed!")
-    } finally {
-      stop
+  sc.stop()
+
+  def main(args: Array[String]): Unit = {
+    val parser = new scopt.OptionParser[Config]("scopt") {
+      arg[String]("master-public-dns") action { (x, c) =>
+        c.copy(masterPublicDNS = x) } text("the public DNS corresponding to" +
+        " the master of the cluster where files will be downloaded to and" +
+        " uploaded from")
+    }
+    parser.parse(args, Config()) match {
+      case Some(config) =>
+        val masterPublicDNS = config.masterPublicDNS
+        dstPrefix = hdfsPrefix + masterPublicDNS
+        try {
+          downloadTest()
+          uploadDownloadTest()
+          partBlockSizeTest()
+
+        } finally {
+          stop()
+        }
+      case None =>
+      // arguments are bad, error message will have been displayed
     }
 
   }
 
-  def stop {
-    sc.stop()
+  def stop() {
     val summaries = s3.listObjects(bucketName).getObjectSummaries
     for (n <- 0 to summaries.size() - 1) {
       s3.deleteObject(bucketName, summaries.get(n).getKey)
 
     }
     s3.deleteBucket(bucketName)
+    hdfs = new Path(dstPrefix + "/").getFileSystem(new Configuration())
+    hdfs.delete(new Path(dstPrefix + hdfsDir), true)
+    hdfs.close()
   }
 
 
@@ -77,55 +110,171 @@ object SparkS3DownloaderTests {
     val random = new Random()
     random.nextBytes(bytes)
     val fos = new FileOutputStream(new File(dst))
-    fos.write(bytes)
+    try {
+      fos.write(bytes)
+    } finally {
+      fos.close()
+    }
     s3.putObject(bucketName, name, new java.io.File(dst))
     bytes
   }
 
-  def partitionTest {
-    val partitionResult = simpleSs3d.partition(partSize).toArray
-    assert(partitionResult.length == 1)
-    assert(partitionResult(0).getSize == partSize)
-    assert(partitionResult(0).getStart == 0)
+  def downloadTest() {
+    val partitionsOne = smallDownloader.partition(partSize).toArray
+    assert(smallDownloader.downloadPart(partitionsOne(0)).sameElements(smallBytes))
 
-    val minusResult = simpleSs3d.partition(partSize - 1).toArray
-    assert(minusResult.length == 1)
-    assert(minusResult(0).getSize == partSize - 1)
-    assert(minusResult(0).getStart == 0)
+    val partitionsThree = bigDownloader.partition(bigFileSize).toArray
+    assert(bigDownloader.downloadPart(partitionsThree(0))
+      .sameElements(util.Arrays.copyOfRange(bigBytes, 0, partSize)))
+    assert(bigDownloader.downloadPart(partitionsThree(1))
+      .sameElements(util.Arrays.copyOfRange(bigBytes, partSize, 2 * partSize)))
+    assert(bigDownloader.downloadPart(partitionsThree(2))
+      .sameElements(util.Arrays.copyOfRange(bigBytes, 2 * partSize, bigFileSize)))
 
-    val plusResult = simpleSs3d.partition(partSize + 1).toArray
-    assert(plusResult.length == 2)
-    assert(plusResult(0).getSize == partSize)
-    assert(plusResult(0).getStart == 0)
-    assert(plusResult(1).getSize == 1)
-    assert(plusResult(1).getStart == partSize)
-
-    val oneResult = simpleSs3d.partition(1).toArray
-    assert(oneResult.length == 1)
-    assert(oneResult(0).getSize == 1)
-    assert(oneResult(0).getStart == 0)
-
-    val bigResult = bigSs3d.partition(bigFileSize).toArray
-    assert(bigResult.length == 3)
-    assert(bigResult(0).getSize == partSize)
-    assert(bigResult(0).getStart == 0)
-    assert(bigResult(1).getSize == partSize)
-    assert(bigResult(1).getStart == partSize)
-    assert(bigResult(2).getSize == partSize / 2)
-    assert(bigResult(2).getStart == partSize * 2)
+    bigBytes = null
+    bigDownloader = null
+    smallBytes = null
+    smallDownloader = null
   }
 
-  def downloadTest {
-    val simpleResult = simpleSs3d.partition(partSize).toArray
-    val simplePart = simpleResult(0)
-    assert(simpleSs3d.downloadPart(simplePart).sameElements(simpleBytes))
+  def uploadDownloadTest(): Unit = {
 
-    val bigResult = bigSs3d.partition(bigFileSize).toArray
-    assert(bigSs3d.downloadPart(bigResult(0))
-      .sameElements(util.Arrays.copyOfRange(bigBytes, 0, partSize)))
-    assert(bigSs3d.downloadPart(bigResult(1))
-      .sameElements(util.Arrays.copyOfRange(bigBytes, partSize, 2 * partSize)))
-    assert(bigSs3d.downloadPart(bigResult(2))
-      .sameElements(util.Arrays.copyOfRange(bigBytes, 2 * partSize, bigFileSize)))
+    // #1 download: bigfile -> file
+    val dst1 = new URI(dstPrefix + hdfsDir + "load1")
+    var load1 = new SparkS3Downloader(credentials, partSize, partSize, new URI(bigSrc), dst1, true)
+    load1.run()
+    load1 = null
+
+    // #2 upload: #1 file -> file
+    val dst2 = new URI(s3Prefix + bucketName + "/load2")
+    var load2 = new SparkS3Uploader(credentials, dst1, dst2, true)
+    load2.run()
+    load2 = null
+
+    // #3 upload: #1 file -> dir
+    val dst3 = new URI(s3Prefix + bucketName + "/load3")
+    var load3 = new SparkS3Uploader(credentials, dst1, dst3, false)
+    load3.run()
+    load3 = null
+
+    // #4 download: #2 file -> file
+    val dst4 = new URI(dstPrefix + hdfsDir + "load4")
+    var load4 = new SparkS3Downloader(credentials, partSize, partSize, dst2, dst4, true)
+    load4.run()
+    load4 = null
+
+    // #5 download: #3 dir -> file
+    val dst5 = new URI(dstPrefix + hdfsDir + "load5")
+    var load5 = new SparkS3Downloader(credentials, partSize, partSize, dst3, dst5, true)
+    load5.run()
+    load5 = null
+
+    // #6 download: #3 dir -> dir
+    val dst6 = new URI(dstPrefix + hdfsDir + "load6")
+    var load6 = new SparkS3Downloader(credentials, partSize, partSize, dst3, dst6, false)
+    load6.run()
+    load6 = null
+
+    // #7 upload: #6 dir -> file
+    val dst7 = new URI(s3Prefix + bucketName + "/load7")
+    var load7 = new SparkS3Uploader(credentials, dst6, dst7, true)
+    load7.run()
+    load7 = null
+
+    // #8 download: #7 file -> file
+    val dst8 = new URI(dstPrefix + hdfsDir + "load8")
+    var load8 = new SparkS3Downloader(credentials, partSize, partSize, dst7, dst8, true)
+    load8.run()
+    load8 = null
+
+    // #9 download: #2 file -> dir
+    val dst9 = new URI(dstPrefix + hdfsDir + "load9")
+    var load9 = new SparkS3Downloader(credentials, partSize, partSize, dst2, dst9, false)
+    load9.run()
+    load9 = null
+
+    // #10 upload: #9 dir -> dir
+    val dst10 = new URI(s3Prefix + bucketName + "/load10")
+    var load10 = new SparkS3Uploader(credentials, dst9, dst10, false)
+    load10.run()
+    load10 = null
+
+    // #11 download: #10 dir -> file
+    val dst11 = new URI(dstPrefix + hdfsDir + "load11")
+    var load11 = new SparkS3Downloader(credentials, partSize, partSize, dst10, dst11, true)
+    load11.run()
+    load11 = null
+
+    val hdfs2 = new Path(dstPrefix + "/").getFileSystem(new Configuration())
+    var bytes1 = IOUtils.toByteArray(hdfs2.open(new Path(dst1)))
+
+    // #4 == #1 (upload: file -> file, download: file -> file)
+    var bytes4 = IOUtils.toByteArray(hdfs2.open(new Path(dst4)))
+    assert(util.Arrays.equals(bytes1, bytes4))
+    bytes4 = null
+
+    // #5 == #1 (upload: file -> dir, download: dir -> file)
+    var bytes5 = IOUtils.toByteArray(hdfs2.open(new Path(dst5)))
+    assert(util.Arrays.equals(bytes1, bytes5))
+    bytes5 = null
+
+    // #8 == #1 (upload: dir -> file, download: dir -> dir)
+    var bytes8 = IOUtils.toByteArray(hdfs2.open(new Path(dst8)))
+    assert(util.Arrays.equals(bytes1, bytes8))
+    bytes8 = null
+
+    // #11 == #1 (upload: dir -> dir, download: file -> dir)
+    var bytes11 = IOUtils.toByteArray(hdfs2.open(new Path(dst11)))
+    assert(util.Arrays.equals(bytes1, bytes11))
+    bytes11 = null
+    bytes1 = null
+
+    hdfs2.close()
+
+  }
+
+  def partBlockSizeTest(): Unit = {
+    // 8MB part, 8MB block
+    val dst8_8 = new URI(dstPrefix + hdfsDir + "8_8")
+    var load8_8 = new SparkS3Downloader(credentials, partSize, partSize, new URI(bigSrc), dst8_8, true)
+    load8_8.run()
+    load8_8 = null
+
+    // 8MB part, 4MB block
+    val dst8_4 = new URI(dstPrefix + hdfsDir + "8_4")
+    var load8_4 = new SparkS3Downloader(credentials, partSize, partSize / 2, new URI(bigSrc), dst8_4, true)
+    load8_4.run()
+    load8_4 = null
+
+    // 4MB part, 4MB block
+    val dst4_4 = new URI(dstPrefix + hdfsDir + "4_4")
+    var load4_4 = new SparkS3Downloader(credentials, partSize / 2, partSize / 2, new URI(bigSrc), dst4_4, true)
+    load4_4.run()
+    load4_4 = null
+
+    // 6MB part, 3MB block
+    val dst6_3 = new URI(dstPrefix + hdfsDir + "6_3")
+    var load6_3 = new SparkS3Downloader(credentials, partSize / 2, partSize / 2, new URI(bigSrc), dst6_3, true)
+    load6_3.run()
+    load6_3 = null
+
+    val hdfs2 = new Path(dstPrefix + "/").getFileSystem(new Configuration())
+    var bytes8_8 = IOUtils.toByteArray(hdfs2.open(new Path(dst8_8)))
+
+    var bytes8_4 = IOUtils.toByteArray(hdfs2.open(new Path(dst8_4)))
+    assert(util.Arrays.equals(bytes8_8, bytes8_4))
+    bytes8_4 = null
+
+    var bytes4_4 = IOUtils.toByteArray(hdfs2.open(new Path(dst4_4)))
+    assert(util.Arrays.equals(bytes8_8, bytes4_4))
+    bytes4_4 = null
+
+    var bytes6_3 = IOUtils.toByteArray(hdfs2.open(new Path(dst6_3)))
+    assert(util.Arrays.equals(bytes8_8, bytes6_3))
+    bytes6_3 = null
+
+    bytes8_8 = null
+
   }
 }
+

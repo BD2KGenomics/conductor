@@ -50,6 +50,12 @@ it points to a directory, each part will correspond to a file in the directory.
 Concatenation only works in downloader if all of the parts except for the last one
 are equal-sized and multiples of the specified block size.
 
+Tests
+=====
+::
+
+    spark-submit --driver-memory 1g spark-s3-downloader-integration-tests-VERSION-distribution.jar MASTER_PUBLIC_DNS
+
 Build
 =====
 
@@ -62,7 +68,6 @@ Caveats
 
 * Alpha-quality
 * Uses Spark, not Yarn/MapReduce
-* Lack of unit tests
 * Destination must be a full ``hdfs://`` URL, the ``fs.default.name``
   property is ignored
 * On failure, temporary files may be left around
