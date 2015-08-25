@@ -38,7 +38,7 @@ import scala.collection.mutable.ArrayBuffer
   limitations under the License.
 */
 
-object SparkS3Downloader {
+object Conductor {
 
   def main(args: Array[String]) {   
     
@@ -77,7 +77,7 @@ object SparkS3Downloader {
             assert(dst.getScheme == "hdfs",
               "The destination location for a download must be in HDFS" +
                 " (Hadoop Distributed File System).")
-            new SparkS3Downloader(
+            new Downloader(
               credentials,
               partitionSize,
               blockSize,
@@ -87,7 +87,7 @@ object SparkS3Downloader {
           } else if (src.getScheme == "hdfs") {
             assert(dst.getScheme == "s3",
               "The destination location for an upload must be in S3.")
-            new SparkS3Uploader(credentials, src, dst, concat).run()
+            new Uploader(credentials, src, dst, concat).run()
           }
       case None =>
         // arguments are bad, error message will have been displayed
@@ -103,7 +103,7 @@ case class Config(s3PartSize: Int = 64,
                   concat: Boolean = false
                    )
 
-class SparkS3Downloader(credentials: Credentials,
+class Downloader(credentials: Credentials,
                         partitionSize: Int,
                         blockSize: Int,
                         src: URI,
@@ -279,7 +279,7 @@ class SparkS3Downloader(credentials: Credentials,
   }
 }
 
-class SparkS3Uploader(credentials: Credentials,
+class Uploader(credentials: Credentials,
                       src: URI,
                       dst: URI,
                       concat: Boolean) extends java.io.Serializable {

@@ -5,7 +5,7 @@ import java.net.URI
 import collection.mutable.Stack
 import org.scalatest._
 
-class SparkS3DownloaderSpec extends FlatSpec with Matchers {
+class ConductorSpec extends FlatSpec with Matchers {
 
   val credentials = Credentials()
   val partSize = 64 * 1024 * 1024
@@ -13,7 +13,7 @@ class SparkS3DownloaderSpec extends FlatSpec with Matchers {
   val src = "s3://file/src"
   val dst = "hdfs://file/dst"
   var downloader =
-    new SparkS3Downloader(
+    new Downloader(
       credentials,
       partSize,
       partSize,
