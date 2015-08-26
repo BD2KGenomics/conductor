@@ -35,13 +35,13 @@ Downloads::
 
     export AWS_ACCESS_KEY=...
     export AWS_SECRET_KEY=...
-    spark-submit spark-s3-downloader-VERSION.jar s3://BUCKET/KEY hdfs://HOST[:PORT]/PATH [--s3-part-size <value>] [--hdfs-block-size <value>] [--concat]
+    spark-submit conductor-VERSION-distribution.jar s3://BUCKET/KEY hdfs://HOST[:PORT]/PATH [--s3-part-size <value>] [--hdfs-block-size <value>] [--concat]
 
 Uploads::
 
     export AWS_ACCESS_KEY=...
     export AWS_SECRET_KEY=...
-    spark-submit spark-s3-downloader-VERSION.jar hdfs://HOST[:PORT]/PATH s3://BUCKET/KEY [--concat]
+    spark-submit conductor-VERSION-distribution.jar hdfs://HOST[:PORT]/PATH s3://BUCKET/KEY [--concat]
 
 Using the "--concat" flag concatenates all the parts of the files following the
 upload or download. The source path can be to either a file or directory. If the
@@ -54,7 +54,7 @@ Tests
 =====
 ::
 
-    spark-submit --driver-memory 1g spark-s3-downloader-integration-tests-VERSION-distribution.jar MASTER_PUBLIC_DNS
+    spark-submit --driver-memory 1g conductor-integration-tests-VERSION-distribution.jar MASTER_PUBLIC_DNS
 
 Build
 =====

@@ -1,4 +1,4 @@
-package edu.ucsc.bd2k
+package edu.ucsc.cgl.conductor
 
 import java.io.{File, FileOutputStream}
 import java.net.URI
@@ -11,9 +11,9 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs._
 import org.apache.spark.{SparkConf, SparkContext}
 
-case class Config(masterPublicDNS: String = "")
+case class TestConfig(masterPublicDNS: String = "")
 
-object SparkS3DownloaderIntegrationTests {
+object ConductorIntegrationTests {
 
   val credentials = Credentials()
 
@@ -35,7 +35,7 @@ object SparkS3DownloaderIntegrationTests {
   val smallSrc = s3Prefix + bucketName + "/" + smallName
   val smallDst = dstPrefix + smallName
   var smallDownloader =
-    new SparkS3Downloader(
+    new Downloader(
       credentials,
       partSize,
       partSize,
@@ -51,7 +51,7 @@ object SparkS3DownloaderIntegrationTests {
   val bigSrc = s3Prefix + bucketName + "/" + big
   val bigDst = dstPrefix + big
   var bigDownloader =
-    new SparkS3Downloader(
+    new Downloader(
       credentials,
       partSize,
       partSize,
@@ -67,13 +67,13 @@ object SparkS3DownloaderIntegrationTests {
   sc.stop()
 
   def main(args: Array[String]): Unit = {
-    val parser = new scopt.OptionParser[Config]("scopt") {
+    val parser = new scopt.OptionParser[TestConfig]("scopt") {
       arg[String]("master-public-dns") action { (x, c) =>
         c.copy(masterPublicDNS = x) } text("the public DNS corresponding to" +
         " the master of the cluster where files will be downloaded to and" +
         " uploaded from")
     }
-    parser.parse(args, Config()) match {
+    parser.parse(args, TestConfig()) match {
       case Some(config) =>
         val masterPublicDNS = config.masterPublicDNS
         dstPrefix = hdfsPrefix + masterPublicDNS
@@ -141,67 +141,67 @@ object SparkS3DownloaderIntegrationTests {
 
     // #1 download: bigfile -> file
     val dst1 = new URI(dstPrefix + hdfsDir + "load1")
-    var load1 = new SparkS3Downloader(credentials, partSize, partSize, new URI(bigSrc), dst1, true)
+    var load1 = new Downloader(credentials, partSize, partSize, new URI(bigSrc), dst1, true)
     load1.run()
     load1 = null
 
     // #2 upload: #1 file -> file
     val dst2 = new URI(s3Prefix + bucketName + "/load2")
-    var load2 = new SparkS3Uploader(credentials, dst1, dst2, true)
+    var load2 = new Uploader(credentials, dst1, dst2, true)
     load2.run()
     load2 = null
 
     // #3 upload: #1 file -> dir
     val dst3 = new URI(s3Prefix + bucketName + "/load3")
-    var load3 = new SparkS3Uploader(credentials, dst1, dst3, false)
+    var load3 = new Uploader(credentials, dst1, dst3, false)
     load3.run()
     load3 = null
 
     // #4 download: #2 file -> file
     val dst4 = new URI(dstPrefix + hdfsDir + "load4")
-    var load4 = new SparkS3Downloader(credentials, partSize, partSize, dst2, dst4, true)
+    var load4 = new Downloader(credentials, partSize, partSize, dst2, dst4, true)
     load4.run()
     load4 = null
 
     // #5 download: #3 dir -> file
     val dst5 = new URI(dstPrefix + hdfsDir + "load5")
-    var load5 = new SparkS3Downloader(credentials, partSize, partSize, dst3, dst5, true)
+    var load5 = new Downloader(credentials, partSize, partSize, dst3, dst5, true)
     load5.run()
     load5 = null
 
     // #6 download: #3 dir -> dir
     val dst6 = new URI(dstPrefix + hdfsDir + "load6")
-    var load6 = new SparkS3Downloader(credentials, partSize, partSize, dst3, dst6, false)
+    var load6 = new Downloader(credentials, partSize, partSize, dst3, dst6, false)
     load6.run()
     load6 = null
 
     // #7 upload: #6 dir -> file
     val dst7 = new URI(s3Prefix + bucketName + "/load7")
-    var load7 = new SparkS3Uploader(credentials, dst6, dst7, true)
+    var load7 = new Uploader(credentials, dst6, dst7, true)
     load7.run()
     load7 = null
 
     // #8 download: #7 file -> file
     val dst8 = new URI(dstPrefix + hdfsDir + "load8")
-    var load8 = new SparkS3Downloader(credentials, partSize, partSize, dst7, dst8, true)
+    var load8 = new Downloader(credentials, partSize, partSize, dst7, dst8, true)
     load8.run()
     load8 = null
 
     // #9 download: #2 file -> dir
     val dst9 = new URI(dstPrefix + hdfsDir + "load9")
-    var load9 = new SparkS3Downloader(credentials, partSize, partSize, dst2, dst9, false)
+    var load9 = new Downloader(credentials, partSize, partSize, dst2, dst9, false)
     load9.run()
     load9 = null
 
     // #10 upload: #9 dir -> dir
     val dst10 = new URI(s3Prefix + bucketName + "/load10")
-    var load10 = new SparkS3Uploader(credentials, dst9, dst10, false)
+    var load10 = new Uploader(credentials, dst9, dst10, false)
     load10.run()
     load10 = null
 
     // #11 download: #10 dir -> file
     val dst11 = new URI(dstPrefix + hdfsDir + "load11")
-    var load11 = new SparkS3Downloader(credentials, partSize, partSize, dst10, dst11, true)
+    var load11 = new Downloader(credentials, partSize, partSize, dst10, dst11, true)
     load11.run()
     load11 = null
 
@@ -236,25 +236,25 @@ object SparkS3DownloaderIntegrationTests {
   def partBlockSizeTest(): Unit = {
     // 8MB part, 8MB block
     val dst8_8 = new URI(dstPrefix + hdfsDir + "8_8")
-    var load8_8 = new SparkS3Downloader(credentials, partSize, partSize, new URI(bigSrc), dst8_8, true)
+    var load8_8 = new Downloader(credentials, partSize, partSize, new URI(bigSrc), dst8_8, true)
     load8_8.run()
     load8_8 = null
 
     // 8MB part, 4MB block
     val dst8_4 = new URI(dstPrefix + hdfsDir + "8_4")
-    var load8_4 = new SparkS3Downloader(credentials, partSize, partSize / 2, new URI(bigSrc), dst8_4, true)
+    var load8_4 = new Downloader(credentials, partSize, partSize / 2, new URI(bigSrc), dst8_4, true)
     load8_4.run()
     load8_4 = null
 
     // 4MB part, 4MB block
     val dst4_4 = new URI(dstPrefix + hdfsDir + "4_4")
-    var load4_4 = new SparkS3Downloader(credentials, partSize / 2, partSize / 2, new URI(bigSrc), dst4_4, true)
+    var load4_4 = new Downloader(credentials, partSize / 2, partSize / 2, new URI(bigSrc), dst4_4, true)
     load4_4.run()
     load4_4 = null
 
     // 6MB part, 3MB block
     val dst6_3 = new URI(dstPrefix + hdfsDir + "6_3")
-    var load6_3 = new SparkS3Downloader(credentials, partSize / 2, partSize / 2, new URI(bigSrc), dst6_3, true)
+    var load6_3 = new Downloader(credentials, partSize / 2, partSize / 2, new URI(bigSrc), dst6_3, true)
     load6_3.run()
     load6_3 = null
 
