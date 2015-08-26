@@ -1,4 +1,4 @@
-package edu.ucsc.bd2k
+package edu.ucsc.cgl.conductor
 
 import java.io.{File, FileOutputStream}
 import java.net.URI

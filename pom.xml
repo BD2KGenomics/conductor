@@ -1,6 +1,6 @@
 <project>
     <modelVersion>4.0.0</modelVersion>
-    <groupId>edu.ucsc.bd2k</groupId>
+    <groupId>edu.ucsc.cgl.conductor</groupId>
     <artifactId>conductor-parent</artifactId>
     <version>0.4-SNAPSHOT</version>
     <name>Conductor Parent</name>
