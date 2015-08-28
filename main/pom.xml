@@ -114,7 +114,7 @@
                     <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
                     <junitxml>.</junitxml>
                     <filereports>WDF TestSuite.txt</filereports>
-                    <suites>edu.ucsc.cgl.ConductorSpec</suites>
+                    <suites>edu.ucsc.cgl.conductor.ConductorSpec</suites>
                 </configuration>
                 <executions>
                     <execution>

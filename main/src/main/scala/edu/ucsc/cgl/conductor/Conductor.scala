@@ -74,9 +74,6 @@ object Conductor {
           val dst = new URI(config.dstLocation)
           val concat = config.concat
           if (src.getScheme == "s3") {
-            assert(dst.getScheme == "hdfs",
-              "The destination location for a download must be in HDFS" +
-                " (Hadoop Distributed File System).")
             new Downloader(
               credentials,
               partitionSize,
@@ -85,8 +82,6 @@ object Conductor {
               dst,
               concat).run()
           } else if (src.getScheme == "hdfs") {
-            assert(dst.getScheme == "s3",
-              "The destination location for an upload must be in S3.")
             new Uploader(credentials, src, dst, concat).run()
           }
       case None =>
@@ -100,16 +95,20 @@ case class Config(s3PartSize: Int = 64,
                   srcLocation: String = "",
                   dstLocation: String = "",
                   test: Boolean = false,
-                  concat: Boolean = false
-                   )
+                  concat: Boolean = false)
 
 class Downloader(credentials: Credentials,
-                        partitionSize: Int,
-                        blockSize: Int,
-                        src: URI,
-                        dst: URI,
-                        concat: Boolean) extends Serializable {
+                 partitionSize: Int,
+                 blockSize: Int,
+                 src: URI,
+                 dst: URI,
+                 concat: Boolean) extends Serializable {
 
+  assert(src.getScheme == "s3",
+    "The source location for a download must be in S3.")
+  assert(dst.getScheme == "hdfs",
+    "The destination location for a download must be in HDFS" +
+      " (Hadoop Distributed File System).")
   val srcBucket = src.getHost
   val srcPath = src.getPath
   assert(srcPath(0) == '/',
@@ -135,7 +134,8 @@ class Downloader(credentials: Credentials,
         destination = splitDst
       }
       if (isFile) {
-        val size: Long = s3.getObjectMetadata(srcBucket, srcKey).getContentLength
+        val size: Long =
+          s3.getObjectMetadata(srcBucket, srcKey).getContentLength
         val partitions: ArrayBuffer[Partition] = partition(size)
         sc.hadoopConfiguration.setInt(blockSizeConf, blockSize)
         sc.parallelize(partitions, partitions.size)
@@ -150,15 +150,14 @@ class Downloader(credentials: Credentials,
         if (concat) {
           var validConcat = true
           for (n <- 0 to objects.length - 2) {
-            println("~~~~~~~~~~~~~OBJECT#" + n + " SIZE:" + objects(n).getSize)
             val nSize = objects(n).getSize
             if (!(nSize == inputBlockSize && nSize % blockSize == 0)) {
               validConcat = false
             }
           }
           assert(validConcat,
-            "For objects to be concatenated, all but the last one must be the" +
-              " same size and be divisible by the HDFS block size.")
+            "For objects to be concatenated, all but the last one must be" +
+              " the same size and be divisible by the HDFS block size.")
         }
         sc.makeRDD(keys)
           .zipWithIndex()
@@ -280,17 +279,20 @@ class Downloader(credentials: Credentials,
 }
 
 class Uploader(credentials: Credentials,
-                      src: URI,
-                      dst: URI,
-                      concat: Boolean) extends java.io.Serializable {
+               src: URI,
+               dst: URI,
+               concat: Boolean) extends java.io.Serializable {
 
+  assert(src.getScheme == "hdfs",
+    "The source location for an upload must be in HDFS.")
+  assert(dst.getScheme == "s3",
+    "The destination location for an upload must be in S3.")
   val dstBucket = dst.getHost
   val dstPath = dst.getPath
   assert(dstPath(0) == '/',
     "The path to the destination file must be valid and start with '/'.")
   val dstKey = dstPath.substring(1)
   val maxPartNumber = 10000
-  //val splitDst = new URI(dst.toString + ".parts")
 
   def run() {
     if (concat) {
@@ -464,7 +466,6 @@ class BinaryInputFormat extends FileInputFormat[Partition, Array[Byte]] {
       override def next(k: Partition, v: Array[Byte]): Boolean = {
         if (x) {
           IOUtils.read(fileIn, v, 0, fileSplit.getLength.toInt)
-          println("START:" + k.getStart + " SIZE:" + k.getSize)
           x = false
           true
         } else {
