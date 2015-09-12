@@ -1,5 +1,6 @@
 package edu.ucsc.cgl.conductor
 
+import java.lang.AssertionError
 import java.net.URI
 
 import collection.mutable.Stack
@@ -53,5 +54,49 @@ class ConductorSpec extends FlatSpec with Matchers {
     assert(bigResult(1).getStart == partSize)
     assert(bigResult(2).getSize == partSize / 2)
     assert(bigResult(2).getStart == partSize * 2)
+  }
+
+  "Downloader objects" should "have a source URI in the S3 filesystem" in {
+    a [AssertionError] should be thrownBy {
+      new Downloader(
+        credentials,
+        partSize,
+        partSize,
+        new URI(dst),
+        new URI(dst),
+        true)
+    }
+  }
+
+  it should "have a destination URI in the HDFS filesystem" in {
+    a [AssertionError] should be thrownBy {
+      new Downloader(
+        credentials,
+        partSize,
+        partSize,
+        new URI(src),
+        new URI(src),
+        true)
+    }
+  }
+
+  "Uploader objects" should "have a source URI in the HDFS filesystem" in {
+    a [AssertionError] should be thrownBy {
+      new Uploader(
+        credentials,
+        new URI(src),
+        new URI(src),
+        true)
+    }
+  }
+
+  it should "have a destination URI in the S3 filesystem" in {
+    a [AssertionError] should be thrownBy {
+      new Uploader(
+        credentials,
+        new URI(dst),
+        new URI(dst),
+        true)
+    }
   }
 }
