@@ -62,6 +62,8 @@ Tests
 =====
 ::
 
+    export AWS_ACCESS_KEY=...
+    export AWS_SECRET_KEY=...
     spark-submit --conf spark.driver.memory=1G \
                  --executor-memory 1G \
                  conductor-integration-tests-0.4-SNAPSHOT-distribution.jar \
