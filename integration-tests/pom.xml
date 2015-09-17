@@ -6,7 +6,7 @@
     <parent>
         <groupId>edu.ucsc.cgl.conductor</groupId>
         <artifactId>conductor-parent</artifactId>
-        <version>0.4-SNAPSHOT</version>
+        <version>0.5-SNAPSHOT</version>
     </parent>
 
     <dependencies>
@@ -50,7 +50,6 @@
             <groupId>org.scalatest</groupId>
             <artifactId>scalatest_2.10</artifactId>
             <version>2.2.4</version>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 
@@ -93,7 +92,7 @@
                             </relocations>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>edu.ucsc.cgl.conductor.ConductorIntegrationTests</mainClass>
+                                    <mainClass>org.scalatest.tools.Runner</mainClass>
                                 </transformer>
                             </transformers>
                             <createDependencyReducedPom>false</createDependencyReducedPom>

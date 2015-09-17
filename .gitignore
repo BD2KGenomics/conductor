@@ -1,4 +1,3 @@
-/main/target
-/integration-tests/target
-/test-files
-/.trash
+/conductor/target/
+/integration-tests/target/
+/.trash/

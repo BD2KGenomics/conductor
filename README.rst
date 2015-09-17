@@ -35,15 +35,23 @@ Downloads::
 
     export AWS_ACCESS_KEY=...
     export AWS_SECRET_KEY=...
-    spark-submit conductor-VERSION-distribution.jar s3://BUCKET/KEY hdfs://HOST[:PORT]/PATH [--s3-part-size <value>] [--hdfs-block-size <value>] [--concat]
+    spark-submit conductor-VERSION-distribution.jar \
+                 s3://BUCKET/KEY \
+                 hdfs://HOST[:PORT]/PATH \
+                 [--s3-part-size <value>] \
+                 [--hdfs-block-size <value>] \
+                 [--concat]
 
 Uploads::
 
     export AWS_ACCESS_KEY=...
     export AWS_SECRET_KEY=...
-    spark-submit conductor-VERSION-distribution.jar hdfs://HOST[:PORT]/PATH s3://BUCKET/KEY [--concat]
+    spark-submit conductor-VERSION-distribution.jar \
+                 hdfs://HOST[:PORT]/PATH \
+                 s3://BUCKET/KEY \
+                 [--concat]
 
-Using the "--concat" flag concatenates all the parts of the files following the
+Using the ``--concat`` flag concatenates all the parts of the files following the
 upload or download. The source path can be to either a file or directory. If
 the path points to a file, the parts will be created in the specified part
 sizes; if it points to a directory, each part will correspond to a file in the
@@ -54,7 +62,10 @@ Tests
 =====
 ::
 
-    spark-submit --driver-memory 1g conductor-integration-tests-VERSION-distribution.jar MASTER_PUBLIC_DNS
+    spark-submit --conf spark.driver.memory=1G \
+                 --executor-memory 1G \
+                 conductor-integration-tests-0.4-SNAPSHOT-distribution.jar \
+                 -e -s edu.ucsc.cgl.conductor.ConductorIntegrationTests
 
 Build
 =====

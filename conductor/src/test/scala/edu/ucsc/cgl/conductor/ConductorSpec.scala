@@ -19,25 +19,24 @@ import java.net.URI
 
 import org.scalatest._
 
-class ConductorSpec extends FlatSpec with Matchers {
-
+class ConductorSpec extends FlatSpec with Matchers
+{
     val credentials = Credentials( )
     val partSize = 64 * 1024 * 1024
     val bigFileSize = 64 * 1024 * 1024 * 5 / 2
-    val src = "s3://file/src"
-    val dst = "hdfs://file/dst"
-    var downloader =
-        new Downloader(
-            credentials,
-            partSize,
-            partSize,
-            new URI( src ),
-            new URI( dst ),
-            true )
+    private val src: URI = new URI( "s3://file/src" )
+    private val dst: URI = new URI( "hdfs://file/dst" )
+    val config = Config(
+        s3PartSize = partSize,
+        hdfsBlockSize = partSize,
+        concat = true,
+        src = src,
+        dst = dst )
+    val downloader = new Download( config, credentials )
 
-    "The partition method" should "divide a file into pieces corresponding to" +
-        " the specified size" in {
+    "The partition method" should "divide a file into pieces corresponding to the specified size" in {
         val partitionResult = downloader.partition( partSize ).toArray
+        // FIXME: assert entire array in a single assertion against a literal
         assert( partitionResult.length == 1 )
         assert( partitionResult( 0 ).getSize == partSize )
         assert( partitionResult( 0 ).getStart == 0 )
@@ -69,47 +68,27 @@ class ConductorSpec extends FlatSpec with Matchers {
         assert( bigResult( 2 ).getStart == partSize * 2 )
     }
 
-    "Downloader objects" should "have a source URI in the S3 filesystem" in {
+    "A downloader" should "have a source URI in the S3 filesystem" in {
         a[AssertionError] should be thrownBy {
-            new Downloader(
-                credentials,
-                partSize,
-                partSize,
-                new URI( dst ),
-                new URI( dst ),
-                true )
+            new Download( Config( src = dst, dst = dst ), credentials )
         }
     }
 
     it should "have a destination URI in the HDFS filesystem" in {
         a[AssertionError] should be thrownBy {
-            new Downloader(
-                credentials,
-                partSize,
-                partSize,
-                new URI( src ),
-                new URI( src ),
-                true )
+            new Download( Config( src = src, dst = src ), credentials )
         }
     }
 
-    "Uploader objects" should "have a source URI in the HDFS filesystem" in {
+    "An uploader" should "have a source URI in the HDFS filesystem" in {
         a[AssertionError] should be thrownBy {
-            new Uploader(
-                credentials,
-                new URI( src ),
-                new URI( src ),
-                true )
+            new Upload( Config( src = src, dst = src ), credentials )
         }
     }
 
     it should "have a destination URI in the S3 filesystem" in {
         a[AssertionError] should be thrownBy {
-            new Uploader(
-                credentials,
-                new URI( dst ),
-                new URI( dst ),
-                true )
+            new Upload( Config( src = dst, dst = dst ), credentials )
         }
     }
 }
