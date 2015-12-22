@@ -76,6 +76,11 @@ Build
 
     mvn package
 
+You can customize the Spark and Hadoop versions to build against, by setting
+the ``spark.version`` and ``hadoop.version`` properties, for example::
+
+    mvn package -Dspark.version=1.5.2 -Dhadoop.version=2.6.2
+
 Caveats
 =======
 
