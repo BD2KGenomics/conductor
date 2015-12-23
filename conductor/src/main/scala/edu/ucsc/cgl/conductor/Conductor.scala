@@ -517,8 +517,15 @@ case class ConfiguredCredentials( )
     def toAwsCredentials: AWSCredentials =
     {
         new AWSCredentialsProviderChain(
+            // Looks at AWS_ACCESS_KEY_ID or AWS_ACCESS_KEY for the access key. And AWS_SECRET_KEY
+            // or AWS_SECRET_ACCESS_KEY for the secret key.
             new EnvironmentVariableCredentialsProvider,
+            // Looks at Java system properties called aws.accessKeyId and aws.secretKey
             new SystemPropertiesCredentialsProvider,
+            // Looks at the file referenced by the AWS_CREDENTIAL_PROFILES_FILE environment
+            // variable if defined or ~/.aws/credentials otherwise. From that file it loads the
+            // profile referenced by the AWS_PROFILE environment variable or the aws.profile system
+            // property. Otherwise it loads the default profile.
             new ProfileCredentialsProvider
         ).getCredentials
     }
@@ -531,6 +538,8 @@ case class ImplicitCredentials( )
 {
     def toAwsCredentials: AWSCredentials =
     {
-        new DefaultAWSCredentialsProviderChain( ).getCredentials
+        new AWSCredentialsProviderChain(
+            new InstanceProfileCredentialsProvider
+        ).getCredentials
     }
 }
