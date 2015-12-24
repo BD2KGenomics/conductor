@@ -23,6 +23,7 @@ import com.amazonaws.auth._
 import com.amazonaws.auth.profile.ProfileCredentialsProvider
 import com.amazonaws.services.s3.AmazonS3Client
 import com.amazonaws.services.s3.model._
+import com.typesafe.scalalogging.slf4j.LazyLogging
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs._
@@ -36,9 +37,11 @@ import org.apache.spark.{SparkConf, SparkContext}
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
+
 case class Config( s3PartSize: Int = 64 * 1024 * 1024,
                    hdfsBlockSize: Int = 64 * 1024 * 1024,
                    concat: Boolean = false,
+                   awsCredentials: Option[ExplicitCredentials] = None,
                    src: URI,
                    dst: URI )
 
@@ -70,14 +73,26 @@ object Conductor
                 c.copy( hdfsBlockSize = x * 1024 * 1024 )
             } text "The block size in MB for files created on HDFS. The default is 64. Must " +
                 "divide the S3 part size evenly. This option is only used when downloading to HDFS."
+
+            opt[String]( 'c', "aws-credentials" ) action { ( x, c ) =>
+                val a = x.split( ':' )
+                c.copy( awsCredentials = Some( ExplicitCredentials( a( 0 ), a( 1 ) ) ) )
+            } text "The access and secret key to use for AWS, separated by a colon. By default, " +
+                "credentials are looked up in environment variables (AWS_ACCESS_KEY_ID or " +
+                "AWS_ACCESS_KEY for the access key and AWS_SECRET_ACCESS_KEY or AWS_SECRET_KEY " +
+                "for the secret key) or, if that fails, in system properties (aws.accessKeyId " +
+                "and aws.secretKey) or, if that fails, read from ~/.aws/credentials. See " +
+                "http://docs.aws.amazon.com/AWSSdkDocsJava/latest/DeveloperGuide/credentials.html" +
+                "for details. Using this flag may lead to exposure of the secret key. Prefer to " +
+                "use the other configuration mechanisms outlined above."
         }
 
-        val credentials = Credentials( )
 
         val dummyUrl: URI = new URI( "" )
         java.lang.System.exit(
             parser.parse( args, Config( src = dummyUrl, dst = dummyUrl ) ) match {
                 case Some( config ) =>
+                    val credentials = Credentials( config.awsCredentials )
                     assert( config.s3PartSize % config.hdfsBlockSize == 0,
                         "S3 part size must be a multiple of HDFS block size." )
                     val (src, dst) = (config.src, config.dst)
@@ -125,9 +140,9 @@ class Download( config: Config, credentials: Credentials ) extends Transfer
         val s3 = new AmazonS3Client( credentials.toAwsCredentials )
         val objects =
             s3.listObjects( srcBucket, srcKey + "/" ).getObjectSummaries
-            .asScala
-            .filter( !_.getKey.endsWith( "_SUCCESS" ) )
-            .sortBy( _.getKey )
+                .asScala
+                .filter( !_.getKey.endsWith( "_SUCCESS" ) )
+                .sortBy( _.getKey )
         val keys = objects.map( _.getKey )
         val isFile = objects.isEmpty
         val sc = sparkContext
@@ -476,19 +491,31 @@ abstract class Credentials
 }
 
 
-object Credentials
+object Credentials extends LazyLogging
 {
-    def apply( ) =
+    def apply( forcedCreds: Option[ExplicitCredentials] = None ) =
     {
-        // If we can get configured credentials on the driver, use those on every
-        // worker node. Otherwise fall back to instance profile credentials which
-        // will be read from instance metadata on each node. Note that even if the
-        // driver node has access to instance profile credentials, we wouldn't be
-        // able to use them on worker nodes.
-        try {
-            new ExplicitCredentials( new ConfiguredCredentials( ).toAwsCredentials )
-        } catch {
-            case _: AmazonClientException => new ImplicitCredentials
+        forcedCreds match {
+            case Some( creds ) =>
+                logger.warn( "Using forced credentials with access key {}.", creds.accessKeyId )
+                creds
+            case None =>
+                // If we can get configured credentials on the driver, use those on every worker
+                // node. Otherwise fall back to instance profile credentials which will be read
+                // from instance metadata on each node. Note that even if the driver node has access
+                // to instance profile credentials, chances are that we wouldn't be able to use them
+                // on worker instances as they are specific to each instance.
+                try {
+                    val creds = new ExplicitCredentials( new ConfiguredCredentials( ).toAwsCredentials )
+                    logger.info( "Using configured credentials with access key {}.", creds.accessKeyId )
+                    creds
+                } catch {
+                    case e: AmazonClientException =>
+                        val creds = new ImplicitCredentials
+                        logger.info( "Using implicit credentials with access key {}. Credentials " +
+                            "may differ from node to node.", creds.toAwsCredentials.getAWSAccessKeyId )
+                        creds
+                }
         }
     }
 }
