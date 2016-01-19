@@ -58,6 +58,14 @@ sizes; if it points to a directory, each part will correspond to a file in the
 directory. Concatenation only works in downloader if all of the parts except
 for the last one are equal-sized and multiples of the specified block size.
 
+If running Spark-on-YARN, you can pass the AWS access/secret keys by passing
+the following config flags to `spark-submit`:
+
+```
+--conf  spark.yarn.appMasterEnv.AWS_ACCESS_KEY=...
+--conf  spark.yarn.appMasterEnv.AWS_SECRET_KEY=...
+```
+
 Tests
 =====
 ::
