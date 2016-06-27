@@ -92,7 +92,7 @@
                     <version>3.1.6</version>
                     <configuration>
                         <scalaCompatVersion>2.10</scalaCompatVersion>
-                        <scalaVersion>2.10</scalaVersion>
+                        <scalaVersion>2.10.4</scalaVersion>
                     </configuration>
                     <executions>
                         <execution>
