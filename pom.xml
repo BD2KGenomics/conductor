@@ -1,7 +1,7 @@
 <project>
     <modelVersion>4.0.0</modelVersion>
     <groupId>edu.ucsc.cgl.conductor</groupId>
-    <artifactId>conductor-parent</artifactId>
+    <artifactId>conductor-parent_2.10</artifactId>
     <version>0.5-SNAPSHOT</version>
     <packaging>pom</packaging>
 
@@ -19,7 +19,7 @@
         <dependencies>
             <dependency>
                 <groupId>edu.ucsc.cgl.conductor</groupId>
-                <artifactId>conductor</artifactId>
+                <artifactId>conductor_2.10</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
