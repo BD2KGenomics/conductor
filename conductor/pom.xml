@@ -1,10 +1,10 @@
 <project>
     <modelVersion>4.0.0</modelVersion>
-    <artifactId>conductor</artifactId>
+    <artifactId>conductor_2.10</artifactId>
     <packaging>jar</packaging>
     <parent>
         <groupId>edu.ucsc.cgl.conductor</groupId>
-        <artifactId>conductor-parent</artifactId>
+        <artifactId>conductor-parent_2.10</artifactId>
         <version>0.5-SNAPSHOT</version>
     </parent>
 
